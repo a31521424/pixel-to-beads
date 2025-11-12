@@ -8,7 +8,8 @@ const originalImage = document.getElementById('originalImage');
 const widthInput = document.getElementById('widthInput');
 const heightInput = document.getElementById('heightInput');
 const keepRatioCheckbox = document.getElementById('keepRatio');
-const colorCountInput = document.getElementById('colorCount');
+const colorPresetSelect = document.getElementById('colorPreset');
+const editCustomColorsBtn = document.getElementById('editCustomColors');
 const generateBtn = document.getElementById('generateBtn');
 const resultArea = document.getElementById('resultArea');
 const patternContainer = document.getElementById('patternContainer');
@@ -25,12 +26,45 @@ const drawerOverlay = document.getElementById('drawerOverlay');
 const closeDrawerBtn = document.getElementById('closeDrawer');
 const showMaterialsBtn = document.getElementById('showMaterialsBtn');
 
+const customColorPicker = document.getElementById('customColorPicker');
+const colorGrid = document.getElementById('colorGrid');
+const selectedColorCount = document.getElementById('selectedColorCount');
+const clearAllColorsBtn = document.getElementById('clearAllColors');
+const closeColorPickerBtn = document.getElementById('closeColorPicker');
+const cancelColorSelectionBtn = document.getElementById('cancelColorSelection');
+const confirmColorSelectionBtn = document.getElementById('confirmColorSelection');
+const presetDescription = document.querySelector('.preset-description');
+
 let showMaterialCounts = false;
+let tempCustomColors = [];
 
 async function initialize() {
     await colorSchemeManager.loadMardColors();
+
+    const savedCustomColors = customColorManager.getColors();
+    if (savedCustomColors.length > 0) {
+        colorPresetSelect.value = 'custom';
+        colorSchemeManager.setColorSubset(savedCustomColors);
+        presetDescription.textContent = `已选择 ${savedCustomColors.length} 种颜色`;
+        editCustomColorsBtn.style.display = 'block';
+    } else {
+        const defaultPreset = colorPresetSelect.value;
+        if (defaultPreset && defaultPreset !== 'custom') {
+            const preset = COLOR_PRESETS[defaultPreset];
+            if (preset) {
+                if (preset.colors === null) {
+                    colorSchemeManager.clearColorSubset();
+                } else {
+                    colorSchemeManager.setColorSubset(preset.colors);
+                }
+                presetDescription.textContent = preset.description;
+            }
+        }
+        editCustomColorsBtn.style.display = 'none';
+    }
+
     console.log('拼豆图纸工具已加载 - MARD配色方案');
-    console.log(`颜色数量: ${colorSchemeManager.getCurrentColors().length}`);
+    console.log(`当前可用颜色数量: ${colorSchemeManager.getCurrentColors().length}`);
 }
 
 imageInput.addEventListener('change', handleImageUpload);
@@ -114,16 +148,14 @@ function generatePattern() {
 
     const width = parseInt(widthInput.value);
     const height = parseInt(heightInput.value);
-    const maxColors = parseInt(colorCountInput.value);
 
     const resizedImageData = resizeImage(uploadedImage, width, height);
-    patternData = quantizeColors(resizedImageData, width, height, maxColors);
+    patternData = quantizeColors(resizedImageData, width, height);
     generateMaterialsList(patternData);
 
     resultArea.style.display = 'none';
     patternContainer.style.display = 'flex';
 
-    // 等待下一帧，确保布局已完成，再绘制图纸
     requestAnimationFrame(() => {
         drawPattern(patternData, width, height);
     });
@@ -141,7 +173,7 @@ function resizeImage(img, targetWidth, targetHeight) {
     return ctx.getImageData(0, 0, targetWidth, targetHeight);
 }
 
-function quantizeColors(imageData, width, height, maxColors) {
+function quantizeColors(imageData, width, height) {
     const pixels = [];
     const BEAD_COLORS = colorSchemeManager.getCurrentColors();
 
@@ -163,23 +195,10 @@ function quantizeColors(imageData, width, height, maxColors) {
         colorCounts[color.name] = (colorCounts[color.name] || 0) + 1;
     });
 
-    const sortedColors = Object.entries(colorCounts)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, maxColors)
-        .map(entry => entry[0]);
-
-    const palette = BEAD_COLORS.filter(color => sortedColors.includes(color.name));
-
-    const finalPixels = pixels.map(color => {
-        if (sortedColors.includes(color.name)) {
-            return color;
-        } else {
-            return findClosestColorInPalette(color.rgb, palette);
-        }
-    });
+    const palette = BEAD_COLORS.filter(color => colorCounts[color.name] > 0);
 
     return {
-        pixels: finalPixels,
+        pixels: pixels,
         width: width,
         height: height,
         palette: palette
@@ -195,21 +214,6 @@ function findClosestBeadColor(rgb, BEAD_COLORS) {
         if (distance < minDistance) {
             minDistance = distance;
             closestColor = beadColor;
-        }
-    }
-
-    return closestColor;
-}
-
-function findClosestColorInPalette(rgb, palette) {
-    let minDistance = Infinity;
-    let closestColor = palette[0];
-
-    for (const color of palette) {
-        const distance = colorDistance(rgb, color.rgb);
-        if (distance < minDistance) {
-            minDistance = distance;
-            closestColor = color;
         }
     }
 
@@ -412,12 +416,6 @@ function closeDrawer() {
 closeDrawerBtn.addEventListener('click', closeDrawer);
 drawerOverlay.addEventListener('click', closeDrawer);
 
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape' && materialsDrawer.classList.contains('open')) {
-        closeDrawer();
-    }
-});
-
 let resizeTimeout;
 window.addEventListener('resize', function() {
     clearTimeout(resizeTimeout);
@@ -435,6 +433,147 @@ downloadBtn.addEventListener('click', function() {
     link.download = 'bead-pattern.png';
     link.href = patternCanvas.toDataURL('image/png');
     link.click();
+});
+
+colorPresetSelect.addEventListener('change', function() {
+    const selectedPreset = this.value;
+
+    if (selectedPreset === 'custom') {
+        openCustomColorPicker();
+    } else {
+        const preset = COLOR_PRESETS[selectedPreset];
+        if (preset) {
+            customColorManager.clear();
+            editCustomColorsBtn.style.display = 'none';
+
+            if (preset.colors === null) {
+                colorSchemeManager.clearColorSubset();
+            } else {
+                colorSchemeManager.setColorSubset(preset.colors);
+            }
+
+            presetDescription.textContent = preset.description;
+
+            if (patternData && uploadedImage) {
+                generatePattern();
+            }
+        }
+    }
+});
+
+editCustomColorsBtn.addEventListener('click', function() {
+    openCustomColorPicker();
+});
+
+function openCustomColorPicker() {
+    tempCustomColors = [...customColorManager.getColors()];
+    populateColorGrid();
+    updateSelectedCount();
+    customColorPicker.classList.add('open');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeCustomColorPicker() {
+    customColorPicker.classList.remove('open');
+    document.body.style.overflow = '';
+}
+
+function populateColorGrid() {
+    const allColors = colorSchemeManager.getAllColors();
+    colorGrid.innerHTML = '';
+
+    allColors.forEach(color => {
+        const colorItem = document.createElement('div');
+        colorItem.className = 'color-item';
+        if (tempCustomColors.includes(color.code)) {
+            colorItem.classList.add('selected');
+        }
+
+        colorItem.innerHTML = `
+            <div class="color-item-preview" style="background-color: ${color.hex}"></div>
+            <div class="color-item-code">${color.code}</div>
+        `;
+
+        colorItem.addEventListener('click', function() {
+            toggleColorSelection(color.code);
+            colorItem.classList.toggle('selected');
+            updateSelectedCount();
+        });
+
+        colorGrid.appendChild(colorItem);
+    });
+}
+
+function toggleColorSelection(colorCode) {
+    const index = tempCustomColors.indexOf(colorCode);
+    if (index > -1) {
+        tempCustomColors.splice(index, 1);
+    } else {
+        tempCustomColors.push(colorCode);
+    }
+}
+
+function updateSelectedCount() {
+    selectedColorCount.textContent = tempCustomColors.length;
+}
+
+clearAllColorsBtn.addEventListener('click', function() {
+    tempCustomColors = [];
+    const colorItems = colorGrid.querySelectorAll('.color-item');
+    colorItems.forEach(item => item.classList.remove('selected'));
+    updateSelectedCount();
+});
+
+closeColorPickerBtn.addEventListener('click', function() {
+    cancelColorSelectionBtn.click();
+});
+
+cancelColorSelectionBtn.addEventListener('click', function() {
+    closeCustomColorPicker();
+
+    const savedCustomColors = customColorManager.getColors();
+    if (savedCustomColors.length > 0) {
+        colorPresetSelect.value = 'custom';
+        colorSchemeManager.setColorSubset(savedCustomColors);
+        presetDescription.textContent = `已选择 ${savedCustomColors.length} 种颜色`;
+        editCustomColorsBtn.style.display = 'block';
+    } else {
+        colorPresetSelect.value = 'standard_20';
+        const preset = COLOR_PRESETS['standard_20'];
+        colorSchemeManager.setColorSubset(preset.colors);
+        presetDescription.textContent = preset.description;
+        editCustomColorsBtn.style.display = 'none';
+    }
+});
+
+confirmColorSelectionBtn.addEventListener('click', function() {
+    if (tempCustomColors.length === 0) {
+        alert('请至少选择一种颜色');
+        return;
+    }
+
+    customColorManager.customColors = [...tempCustomColors];
+    customColorManager.saveToStorage();
+
+    colorSchemeManager.setColorSubset(tempCustomColors);
+    presetDescription.textContent = `已选择 ${tempCustomColors.length} 种颜色`;
+    editCustomColorsBtn.style.display = 'block';
+
+    closeCustomColorPicker();
+
+    if (patternData && uploadedImage) {
+        generatePattern();
+    }
+});
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        if (customColorPicker.classList.contains('open')) {
+            cancelColorSelectionBtn.click();
+        } else if (materialsDrawer.classList.contains('open')) {
+            closeDrawer();
+        }
+    }
 });
 
 initialize();

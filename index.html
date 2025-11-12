@@ -34,6 +34,21 @@
                     <h2>2. 调整参数</h2>
 
                     <div class="setting-item">
+                        <label for="colorPreset">颜色模版:</label>
+                        <select id="colorPreset" class="color-preset-select">
+                            <option value="all_colors">全色系（293色）</option>
+                            <option value="basic_10">入门10色</option>
+                            <option value="standard_20" selected>标准20色</option>
+                            <option value="advanced_30">进阶30色</option>
+                            <option value="professional_50">专业50色</option>
+                            <option value="complete_100">大师100色</option>
+                            <option value="custom">自定义颜色...</option>
+                        </select>
+                        <p class="preset-description">日常创作，色彩表现力强</p>
+                        <button id="editCustomColors" class="btn-secondary" style="display: none; margin-top: 8px;">修改颜色选择</button>
+                    </div>
+
+                    <div class="setting-item">
                         <label for="widthInput">宽度（珠子数量）:</label>
                         <div class="input-with-unit">
                             <input type="number" id="widthInput" min="10" max="100" value="30">
@@ -54,14 +69,6 @@
                             <input type="checkbox" id="keepRatio" checked>
                             保持图片比例
                         </label>
-                    </div>
-
-                    <div class="setting-item">
-                        <label for="colorCount">颜色数量:</label>
-                        <div class="input-with-unit">
-                            <input type="number" id="colorCount" min="5" max="50" value="16">
-                            <span class="unit">色</span>
-                        </div>
                     </div>
 
                     <button id="generateBtn" class="btn-primary" disabled>生成图纸</button>
@@ -118,8 +125,34 @@
                 </div>
             </div>
         </div>
+
+        <!-- 自定义颜色选择器 -->
+        <div id="customColorPicker" class="color-picker-modal">
+            <div class="color-picker-overlay"></div>
+            <div class="color-picker-content">
+                <div class="color-picker-header">
+                    <h2>选择你的豆子颜色</h2>
+                    <button id="closeColorPicker" class="close-picker">×</button>
+                </div>
+                <div class="color-picker-body">
+                    <div class="color-picker-info">
+                        <p>从MARD 293色中选择你手中拥有的豆子颜色</p>
+                        <div class="color-picker-actions">
+                            <button id="clearAllColors" class="btn-secondary-small">清空选择</button>
+                            <span class="selected-count">已选择: <strong id="selectedColorCount">0</strong> 色</span>
+                        </div>
+                    </div>
+                    <div id="colorGrid" class="color-grid"></div>
+                </div>
+                <div class="color-picker-footer">
+                    <button id="cancelColorSelection" class="btn-secondary">取消</button>
+                    <button id="confirmColorSelection" class="btn-primary">确认选择</button>
+                </div>
+            </div>
+        </div>
     </div>
 
+    <script src="src/colorPresets.js"></script>
     <script src="src/colorSchemes.js"></script>
     <script src="src/app.js"></script>
 </body>
