@@ -58,18 +58,23 @@ const maxZoom = 3.0;
 let selectedCell = null; // {x, y} 选中的格子坐标
 let highlightSameColor = false; // 是否高亮相同颜色
 let hideSameColor = false; // 是否隐藏相同颜色
+let previousPreset = 'all_colors'; // 记录打开自定义选择器前的预设
 
 async function initialize() {
     await colorSchemeManager.loadMardColors();
 
     const savedCustomColors = customColorManager.getColors();
     if (savedCustomColors.length > 0) {
+        // 有自定义颜色，默认使用自定义配置
         colorPresetSelect.value = 'custom';
         colorSchemeManager.setColorSubset(savedCustomColors);
         presetDescription.textContent = `已选择 ${savedCustomColors.length} 种颜色`;
         editCustomColorsBtn.style.display = 'block';
     } else {
+        // 没有自定义颜色，使用HTML中设置的默认预设（all_colors）
         const defaultPreset = colorPresetSelect.value;
+        previousPreset = defaultPreset; // 记录默认预设
+
         if (defaultPreset && defaultPreset !== 'custom') {
             const preset = COLOR_PRESETS[defaultPreset];
             if (preset) {
@@ -732,7 +737,10 @@ colorPresetSelect.addEventListener('change', function() {
     } else {
         const preset = COLOR_PRESETS[selectedPreset];
         if (preset) {
-            customColorManager.clear();
+            // 记录当前预设
+            previousPreset = selectedPreset;
+
+            // 切换到预设时不清空自定义颜色，只是隐藏编辑按钮
             editCustomColorsBtn.style.display = 'none';
 
             if (preset.colors === null) {
@@ -755,6 +763,11 @@ editCustomColorsBtn.addEventListener('click', function() {
 });
 
 function openCustomColorPicker() {
+    // 记录当前选择的预设（非custom时）
+    if (colorPresetSelect.value !== 'custom') {
+        previousPreset = colorPresetSelect.value;
+    }
+
     tempCustomColors = [...customColorManager.getColors()];
     populateColorGrid();
     updateSelectedCount();
@@ -822,15 +835,23 @@ cancelColorSelectionBtn.addEventListener('click', function() {
 
     const savedCustomColors = customColorManager.getColors();
     if (savedCustomColors.length > 0) {
+        // 有保存的自定义颜色，恢复到custom
         colorPresetSelect.value = 'custom';
         colorSchemeManager.setColorSubset(savedCustomColors);
         presetDescription.textContent = `已选择 ${savedCustomColors.length} 种颜色`;
         editCustomColorsBtn.style.display = 'block';
     } else {
-        colorPresetSelect.value = 'standard_20';
-        const preset = COLOR_PRESETS['standard_20'];
-        colorSchemeManager.setColorSubset(preset.colors);
-        presetDescription.textContent = preset.description;
+        // 没有保存的自定义颜色，恢复到之前的预设
+        colorPresetSelect.value = previousPreset;
+        const preset = COLOR_PRESETS[previousPreset];
+        if (preset) {
+            if (preset.colors === null) {
+                colorSchemeManager.clearColorSubset();
+            } else {
+                colorSchemeManager.setColorSubset(preset.colors);
+            }
+            presetDescription.textContent = preset.description;
+        }
         editCustomColorsBtn.style.display = 'none';
     }
 });
