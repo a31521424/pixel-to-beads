@@ -17,6 +17,10 @@ const patternCanvas = document.getElementById('patternCanvas');
 const showGridCheckbox = document.getElementById('showGrid');
 const showNumbersCheckbox = document.getElementById('showNumbers');
 const downloadBtn = document.getElementById('downloadBtn');
+const zoomInBtn = document.getElementById('zoomInBtn');
+const zoomOutBtn = document.getElementById('zoomOutBtn');
+const zoomResetBtn = document.getElementById('zoomResetBtn');
+const zoomLevelSpan = document.getElementById('zoomLevel');
 const materialsList = document.getElementById('materialsList');
 const toggleDetailsBtn = document.getElementById('toggleDetails');
 const totalBeadsSpan = document.getElementById('totalBeads');
@@ -37,6 +41,10 @@ const presetDescription = document.querySelector('.preset-description');
 
 let showMaterialCounts = false;
 let tempCustomColors = [];
+let zoomScale = 1.0;
+const zoomStep = 0.2;
+const minZoom = 0.5;
+const maxZoom = 3.0;
 
 async function initialize() {
     await colorSchemeManager.loadMardColors();
@@ -153,6 +161,10 @@ function generatePattern() {
     patternData = quantizeColors(resizedImageData, width, height);
     generateMaterialsList(patternData);
 
+    // 重置缩放
+    zoomScale = 1.0;
+    updateZoomLevel();
+
     resultArea.style.display = 'none';
     patternContainer.style.display = 'flex';
 
@@ -245,7 +257,10 @@ function drawPattern(data, width, height) {
     const cellSizeByHeight = (containerHeight - labelSize) / height;
     const idealCellSize = Math.min(cellSizeByWidth, cellSizeByHeight);
 
-    const cellSize = Math.max(minCellSize, Math.min(maxCellSize, idealCellSize));
+    const baseCellSize = Math.max(minCellSize, Math.min(maxCellSize, idealCellSize));
+
+    // 应用缩放比例
+    const cellSize = baseCellSize * zoomScale;
 
     // 显示尺寸
     const displayWidth = width * cellSize + labelSize;
@@ -451,6 +466,39 @@ showGridCheckbox.addEventListener('change', function() {
 });
 
 showNumbersCheckbox.addEventListener('change', function() {
+    if (patternData) {
+        drawPattern(patternData, patternData.width, patternData.height);
+    }
+});
+
+function updateZoomLevel() {
+    const percentage = Math.round(zoomScale * 100);
+    zoomLevelSpan.textContent = `${percentage}%`;
+}
+
+zoomInBtn.addEventListener('click', function() {
+    if (zoomScale < maxZoom) {
+        zoomScale = Math.min(maxZoom, zoomScale + zoomStep);
+        updateZoomLevel();
+        if (patternData) {
+            drawPattern(patternData, patternData.width, patternData.height);
+        }
+    }
+});
+
+zoomOutBtn.addEventListener('click', function() {
+    if (zoomScale > minZoom) {
+        zoomScale = Math.max(minZoom, zoomScale - zoomStep);
+        updateZoomLevel();
+        if (patternData) {
+            drawPattern(patternData, patternData.width, patternData.height);
+        }
+    }
+});
+
+zoomResetBtn.addEventListener('click', function() {
+    zoomScale = 1.0;
+    updateZoomLevel();
     if (patternData) {
         drawPattern(patternData, patternData.width, patternData.height);
     }
