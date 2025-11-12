@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>图片转MARD拼豆图纸工具</title>
+    <link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>图片转拼豆图纸工具</h1>
+            <p class="subtitle">将任意图片转换为MARD拼豆手工图纸</p>
+        </header>
+
+        <div class="main-content">
+            <!-- 左侧：控制面板 -->
+            <div class="control-panel">
+                <section class="upload-section">
+                    <h2>1. 上传图片</h2>
+                    <div class="upload-area" id="uploadArea">
+                        <input type="file" id="imageInput" accept="image/*" hidden>
+                        <label for="imageInput" class="upload-label">
+                            <span class="upload-icon">📁</span>
+                            <span>点击选择图片</span>
+                        </label>
+                    </div>
+                    <div class="preview-container" id="previewContainer" style="display: none;">
+                        <img id="originalImage" alt="原图预览">
+                    </div>
+                </section>
+
+                <section class="settings-section">
+                    <h2>2. 调整参数</h2>
+
+                    <div class="setting-item">
+                        <label for="widthInput">宽度（珠子数量）:</label>
+                        <div class="input-with-unit">
+                            <input type="number" id="widthInput" min="10" max="100" value="30">
+                            <span class="unit">珠</span>
+                        </div>
+                    </div>
+
+                    <div class="setting-item">
+                        <label for="heightInput">高度（珠子数量）:</label>
+                        <div class="input-with-unit">
+                            <input type="number" id="heightInput" min="10" max="100" value="30">
+                            <span class="unit">珠</span>
+                        </div>
+                    </div>
+
+                    <div class="setting-item">
+                        <label>
+                            <input type="checkbox" id="keepRatio" checked>
+                            保持图片比例
+                        </label>
+                    </div>
+
+                    <div class="setting-item">
+                        <label for="colorCount">颜色数量:</label>
+                        <div class="input-with-unit">
+                            <input type="number" id="colorCount" min="5" max="50" value="16">
+                            <span class="unit">色</span>
+                        </div>
+                    </div>
+
+                    <button id="generateBtn" class="btn-primary" disabled>生成图纸</button>
+                </section>
+            </div>
+
+            <!-- 右侧：结果显示 -->
+            <div class="result-panel">
+                <div id="resultArea" class="empty-state">
+                    <div class="empty-icon">🎨</div>
+                    <p>上传图片后，点击"生成图纸"查看结果</p>
+                </div>
+
+                <!-- 图纸画布 -->
+                <div id="patternContainer" style="display: none;">
+                    <div class="pattern-header">
+                        <h2>拼豆图纸</h2>
+                        <div class="pattern-controls">
+                            <label>
+                                <input type="checkbox" id="showGrid" checked>
+                                显示网格和坐标
+                            </label>
+                            <label>
+                                <input type="checkbox" id="showNumbers">
+                                显示色号
+                            </label>
+                            <button id="showMaterialsBtn" class="btn-secondary">查看材料</button>
+                            <button id="downloadBtn" class="btn-secondary">下载图纸</button>
+                        </div>
+                    </div>
+                    <div class="pattern-canvas-wrapper">
+                        <canvas id="patternCanvas"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 悬浮材料清单抽屉 -->
+        <div id="materialsDrawer" class="materials-drawer">
+            <div class="drawer-overlay" id="drawerOverlay"></div>
+            <div class="drawer-content">
+                <div class="drawer-header">
+                    <h2>使用材料</h2>
+                    <button id="closeDrawer" class="close-drawer">×</button>
+                </div>
+                <div class="drawer-body">
+                    <div class="materials-actions">
+                        <button id="toggleDetails" class="toggle-details">显示数量</button>
+                    </div>
+                    <div id="materialsList" class="materials-list"></div>
+                    <div class="total-beads">
+                        总珠子数: <span id="totalBeads">0</span> 颗
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="src/colorSchemes.js"></script>
+    <script src="src/app.js"></script>
+</body>
+</html>

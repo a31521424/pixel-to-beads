@@ -1,0 +1,26 @@
+{
+  "name": "pixel-to-beads",
+  "version": "1.0.0",
+  "description": "将任意图片转换为拼豆手工图纸的纯前端工具",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "serve": "vite --open"
+  },
+  "keywords": [
+    "beads",
+    "pixel-art",
+    "perler",
+    "hama",
+    "mard",
+    "image-converter"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "vite": "^5.0.0"
+  },
+  "private": true
+}
