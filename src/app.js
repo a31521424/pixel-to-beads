@@ -238,7 +238,7 @@ function drawPattern(data, width, height) {
     const showGrid = showGridCheckbox.checked;
     const showNumbers = showNumbersCheckbox.checked;
 
-    // 为行列编号预留空间（只有显示网格时才需要）
+    // 为行列编号预留空间（只在显示网格时需要）
     const labelSize = showGrid ? 24 : 0;
 
     const cellSizeByWidth = (containerWidth - labelSize) / width;
@@ -247,18 +247,31 @@ function drawPattern(data, width, height) {
 
     const cellSize = Math.max(minCellSize, Math.min(maxCellSize, idealCellSize));
 
-    const canvasWidth = width * cellSize + labelSize;
-    const canvasHeight = height * cellSize + labelSize;
+    // 显示尺寸
+    const displayWidth = width * cellSize + labelSize;
+    const displayHeight = height * cellSize + labelSize;
+
+    // 渲染倍数：实际渲染更高分辨率，然后缩小显示
+    const renderScale = 4;
+    const canvasWidth = displayWidth * renderScale;
+    const canvasHeight = displayHeight * renderScale;
 
     patternCanvas.width = canvasWidth;
     patternCanvas.height = canvasHeight;
+    patternCanvas.style.width = displayWidth + 'px';
+    patternCanvas.style.height = displayHeight + 'px';
 
     const ctx = patternCanvas.getContext('2d');
+    ctx.scale(renderScale, renderScale);
+
+    // 启用更好的渲染质量
+    ctx.imageSmoothingEnabled = false;
+    ctx.imageSmoothingQuality = 'high';
 
     ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+    ctx.fillRect(0, 0, displayWidth, displayHeight);
 
-    // 绘制列标签和行标签（与网格绑定）
+    // 绘制列标签和行标签（只在显示网格时绘制）
     if (showGrid) {
         ctx.fillStyle = '#737373';
         ctx.font = `${Math.min(12, cellSize * 0.4)}px Arial`;
@@ -285,21 +298,62 @@ function drawPattern(data, width, height) {
             const drawX = labelSize + x * cellSize;
             const drawY = labelSize + y * cellSize;
 
+            // 绘制背景颜色
             ctx.fillStyle = color.hex;
             ctx.fillRect(drawX, drawY, cellSize, cellSize);
+        }
+    }
 
-            if (showGrid) {
-                ctx.strokeStyle = '#E5E5E5';
-                ctx.lineWidth = 1;
-                ctx.strokeRect(drawX, drawY, cellSize, cellSize);
-            }
+    // 绘制网格线（在所有颜色块之后统一绘制，避免线条不均匀）
+    if (showGrid) {
+        ctx.strokeStyle = '#E5E5E5';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
 
-            // 绘制色号（显示MARD code）
-            if (showNumbers && cellSize >= 10) {
+        // 绘制垂直线
+        for (let x = 0; x <= width; x++) {
+            const lineX = labelSize + x * cellSize;
+            ctx.moveTo(lineX, labelSize);
+            ctx.lineTo(lineX, labelSize + height * cellSize);
+        }
+
+        // 绘制水平线
+        for (let y = 0; y <= height; y++) {
+            const lineY = labelSize + y * cellSize;
+            ctx.moveTo(labelSize, lineY);
+            ctx.lineTo(labelSize + width * cellSize, lineY);
+        }
+
+        ctx.stroke();
+    }
+
+    // 绘制色号（独立功能，不依赖网格）
+    if (showNumbers) {
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const index = y * width + x;
+                const color = data.pixels[index];
+
+                const drawX = labelSize + x * cellSize;
+                const drawY = labelSize + y * cellSize;
+
                 const mardCode = color.name;
-                ctx.fillStyle = isColorDark(color.rgb) ? '#ffffff' : '#000000';
-                const fontSize = Math.max(8, Math.floor(cellSize * 0.4));
-                ctx.font = `${fontSize}px Arial`;
+                const textColor = isColorDark(color.rgb) ? '#ffffff' : '#000000';
+                ctx.fillStyle = textColor;
+
+                // 根据 cellSize 动态调整字体大小
+                let fontSize;
+                if (cellSize >= 30) {
+                    fontSize = Math.floor(cellSize * 0.4);
+                } else if (cellSize >= 20) {
+                    fontSize = Math.floor(cellSize * 0.35);
+                } else if (cellSize >= 15) {
+                    fontSize = Math.floor(cellSize * 0.3);
+                } else {
+                    fontSize = Math.max(6, Math.floor(cellSize * 0.25));
+                }
+
+                ctx.font = `bold ${fontSize}px Arial`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillText(mardCode, drawX + cellSize / 2, drawY + cellSize / 2);
@@ -307,9 +361,10 @@ function drawPattern(data, width, height) {
         }
     }
 
+    // 绘制外边框（只在显示网格时绘制）
     if (showGrid) {
         ctx.strokeStyle = '#D4D4D4';
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 2;
         ctx.strokeRect(labelSize, labelSize, width * cellSize, height * cellSize);
     }
 }
