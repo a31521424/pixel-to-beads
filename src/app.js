@@ -37,6 +37,8 @@ const coordinateInfo = document.getElementById('coordinateInfo');
 const currentCoordinate = document.getElementById('currentCoordinate');
 const coordinateSwatch = document.getElementById('coordinateSwatch');
 const coordinateColorName = document.getElementById('coordinateColorName');
+const highlightSameColorBtn = document.getElementById('highlightSameColorBtn');
+const hideSameColorBtn = document.getElementById('hideSameColorBtn');
 
 const customColorPicker = document.getElementById('customColorPicker');
 const colorGrid = document.getElementById('colorGrid');
@@ -54,6 +56,8 @@ const zoomStep = 0.2;
 const minZoom = 0.5;
 const maxZoom = 3.0;
 let selectedCell = null; // {x, y} 选中的格子坐标
+let highlightSameColor = false; // 是否高亮相同颜色
+let hideSameColor = false; // 是否隐藏相同颜色
 
 async function initialize() {
     await colorSchemeManager.loadMardColors();
@@ -184,7 +188,11 @@ function generatePattern() {
     // 重置缩放和选中
     zoomScale = 1.0;
     selectedCell = null;
+    highlightSameColor = false;
+    hideSameColor = false;
     coordinateInfo.style.display = 'none';
+    highlightSameColorBtn.classList.remove('active');
+    hideSameColorBtn.classList.remove('active');
     updateZoomLevel();
 
     resultArea.style.display = 'none';
@@ -326,6 +334,14 @@ function drawPattern(data, width, height) {
         }
     }
 
+    // 获取选中的颜色（用于高亮/隐藏）
+    let selectedColor = null;
+    if (selectedCell && selectedCell.x >= 0 && selectedCell.x < width &&
+        selectedCell.y >= 0 && selectedCell.y < height) {
+        const selectedIndex = selectedCell.y * width + selectedCell.x;
+        selectedColor = data.pixels[selectedIndex];
+    }
+
     // 绘制每个珠子
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
@@ -335,9 +351,25 @@ function drawPattern(data, width, height) {
             const drawX = labelSize + x * cellSize;
             const drawY = labelSize + y * cellSize;
 
+            // 判断是否是相同颜色
+            const isSameColor = selectedColor && color.name === selectedColor.name;
+
+            // 隐藏相同颜色
+            if (hideSameColor && isSameColor) {
+                ctx.fillStyle = '#F5F5F5';
+                ctx.fillRect(drawX, drawY, cellSize, cellSize);
+                continue;
+            }
+
             // 绘制背景颜色
             ctx.fillStyle = color.hex;
             ctx.fillRect(drawX, drawY, cellSize, cellSize);
+
+            // 高亮相同颜色
+            if (highlightSameColor && isSameColor) {
+                ctx.fillStyle = 'rgba(255, 215, 0, 0.4)';
+                ctx.fillRect(drawX, drawY, cellSize, cellSize);
+            }
         }
     }
 
@@ -626,6 +658,46 @@ function updateCoordinateInfo() {
     coordinateColorName.textContent = color.name;
     coordinateInfo.style.display = 'flex';
 }
+
+// 高亮相同颜色按钮
+highlightSameColorBtn.addEventListener('click', function() {
+    if (!selectedCell || !patternData) return;
+
+    highlightSameColor = !highlightSameColor;
+
+    // 如果启用高亮，则禁用隐藏
+    if (highlightSameColor) {
+        hideSameColor = false;
+        hideSameColorBtn.classList.remove('active');
+        highlightSameColorBtn.classList.add('active');
+    } else {
+        highlightSameColorBtn.classList.remove('active');
+    }
+
+    requestAnimationFrame(() => {
+        drawPattern(patternData, patternData.width, patternData.height);
+    });
+});
+
+// 隐藏相同颜色按钮
+hideSameColorBtn.addEventListener('click', function() {
+    if (!selectedCell || !patternData) return;
+
+    hideSameColor = !hideSameColor;
+
+    // 如果启用隐藏，则禁用高亮
+    if (hideSameColor) {
+        highlightSameColor = false;
+        highlightSameColorBtn.classList.remove('active');
+        hideSameColorBtn.classList.add('active');
+    } else {
+        hideSameColorBtn.classList.remove('active');
+    }
+
+    requestAnimationFrame(() => {
+        drawPattern(patternData, patternData.width, patternData.height);
+    });
+});
 
 // 控制面板切换
 toggleControlPanelBtn.addEventListener('click', function() {

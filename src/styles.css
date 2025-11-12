@@ -423,10 +423,52 @@ section h2 {
     align-items: center;
     gap: 16px;
     padding: 6px 12px;
-    background: var(--gray-50);
+    background: var(--white);
     border: 1px solid var(--gray-200);
     border-radius: 6px;
     font-size: 0.85em;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.coordinate-details {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex: 1;
+}
+
+.coordinate-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.btn-coord {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid var(--gray-300);
+    background: var(--white);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1.2em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.btn-coord:hover {
+    background: var(--gray-50);
+    border-color: var(--gray-400);
+}
+
+.btn-coord:active {
+    transform: scale(0.95);
+}
+
+.btn-coord.active {
+    background: var(--gray-900);
+    border-color: var(--gray-900);
 }
 
 .coordinate-label {
@@ -1088,11 +1130,24 @@ section h2 {
     }
 
     .coordinate-info {
-        width: 100%;
-        order: 1;
-        font-size: 0.8em;
-        padding: 6px 10px;
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        left: auto;
+        width: auto;
+        max-width: calc(100vw - 40px);
+        order: unset;
+        font-size: 0.75em;
+        padding: 8px 12px;
         gap: 12px;
+        z-index: 50;
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .coordinate-details {
+        gap: 10px;
+        flex-wrap: wrap;
     }
 
     .pattern-controls {
