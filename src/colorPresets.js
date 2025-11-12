@@ -191,3 +191,5 @@ class CustomColorManager {
 
 // 导出
 const customColorManager = new CustomColorManager();
+
+export { COLOR_PRESETS, customColorManager };
