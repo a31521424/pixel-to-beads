@@ -145,7 +145,13 @@ pixel-to-beads/
 
 ## 许可证
 
-MIT License
+本项目采用 [GNU General Public License v3.0](LICENSE) 开源协议。
+
+## 作者与仓库
+
+- **作者**: [banbxio](https://github.com/a31521424)
+- **仓库**: [https://github.com/a31521424/pixel-to-beads](https://github.com/a31521424/pixel-to-beads)
+- **问题反馈**: [GitHub Issues](https://github.com/a31521424/pixel-to-beads/issues)
 
 ## 更新日志
 

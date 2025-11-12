@@ -1,7 +1,7 @@
 {
   "name": "pixel-to-beads",
-  "version": "1.0.0",
-  "description": "将任意图片转换为拼豆手工图纸的纯前端工具",
+  "version": "2.0.0",
+  "description": "将任意图片转换为MARD拼豆手工图纸的纯前端工具 - 支持293色完整配色",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,12 +15,22 @@
     "perler",
     "hama",
     "mard",
-    "image-converter"
+    "image-converter",
+    "拼豆",
+    "拼豆图纸",
+    "手工DIY"
   ],
-  "author": "",
-  "license": "MIT",
+  "author": "banbxio <https://github.com/a31521424>",
+  "license": "GPL-3.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/a31521424/pixel-to-beads.git"
+  },
+  "homepage": "https://github.com/a31521424/pixel-to-beads",
+  "bugs": {
+    "url": "https://github.com/a31521424/pixel-to-beads/issues"
+  },
   "devDependencies": {
     "vite": "^5.0.0"
-  },
-  "private": true
+  }
 }
