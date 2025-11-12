@@ -407,6 +407,8 @@ section h2 {
     border-bottom: 1px solid var(--gray-200);
     background: var(--white);
     flex-shrink: 0;
+    flex-wrap: wrap;
+    gap: 12px;
 }
 
 .pattern-header h2 {
@@ -414,6 +416,42 @@ section h2 {
     font-size: 0.95em;
     font-weight: 600;
     margin: 0;
+}
+
+.coordinate-info {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 6px 12px;
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+    border-radius: 6px;
+    font-size: 0.85em;
+}
+
+.coordinate-label {
+    color: var(--gray-700);
+}
+
+.coordinate-label strong {
+    color: var(--gray-900);
+    font-weight: 700;
+    font-family: 'Courier New', monospace;
+}
+
+.coordinate-color {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--gray-700);
+}
+
+.coordinate-swatch {
+    width: 20px;
+    height: 20px;
+    border-radius: 3px;
+    border: 1px solid var(--gray-300);
+    display: inline-block;
 }
 
 .pattern-controls {
@@ -516,6 +554,7 @@ section h2 {
     background: var(--white);
     margin: auto;
     touch-action: pan-x pan-y;
+    cursor: pointer;
 }
 
 
@@ -1046,6 +1085,14 @@ section h2 {
 
     .pattern-header h2 {
         font-size: 0.9375em;
+    }
+
+    .coordinate-info {
+        width: 100%;
+        order: 1;
+        font-size: 0.8em;
+        padding: 6px 10px;
+        gap: 12px;
     }
 
     .pattern-controls {

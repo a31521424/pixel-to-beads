@@ -33,6 +33,11 @@ const showMaterialsBtn = document.getElementById('showMaterialsBtn');
 const toggleControlPanelBtn = document.getElementById('toggleControlPanel');
 const controlPanel = document.getElementById('controlPanel');
 
+const coordinateInfo = document.getElementById('coordinateInfo');
+const currentCoordinate = document.getElementById('currentCoordinate');
+const coordinateSwatch = document.getElementById('coordinateSwatch');
+const coordinateColorName = document.getElementById('coordinateColorName');
+
 const customColorPicker = document.getElementById('customColorPicker');
 const colorGrid = document.getElementById('colorGrid');
 const selectedColorCount = document.getElementById('selectedColorCount');
@@ -48,6 +53,7 @@ let zoomScale = 1.0;
 const zoomStep = 0.2;
 const minZoom = 0.5;
 const maxZoom = 3.0;
+let selectedCell = null; // {x, y} 选中的格子坐标
 
 async function initialize() {
     await colorSchemeManager.loadMardColors();
@@ -175,8 +181,10 @@ function generatePattern() {
     patternData = quantizeColors(resizedImageData, width, height);
     generateMaterialsList(patternData);
 
-    // 重置缩放
+    // 重置缩放和选中
     zoomScale = 1.0;
+    selectedCell = null;
+    coordinateInfo.style.display = 'none';
     updateZoomLevel();
 
     resultArea.style.display = 'none';
@@ -396,6 +404,22 @@ function drawPattern(data, width, height) {
         ctx.lineWidth = 2;
         ctx.strokeRect(labelSize, labelSize, width * cellSize, height * cellSize);
     }
+
+    // 高亮选中的格子
+    if (selectedCell && selectedCell.x >= 0 && selectedCell.x < width &&
+        selectedCell.y >= 0 && selectedCell.y < height) {
+        const drawX = labelSize + selectedCell.x * cellSize;
+        const drawY = labelSize + selectedCell.y * cellSize;
+
+        // 绘制高亮边框
+        ctx.strokeStyle = '#FF6B00';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(drawX, drawY, cellSize, cellSize);
+
+        // 绘制半透明覆盖层
+        ctx.fillStyle = 'rgba(255, 107, 0, 0.2)';
+        ctx.fillRect(drawX, drawY, cellSize, cellSize);
+    }
 }
 
 function getColumnLabel(index) {
@@ -532,6 +556,76 @@ function closeDrawer() {
 
 closeDrawerBtn.addEventListener('click', closeDrawer);
 drawerOverlay.addEventListener('click', closeDrawer);
+
+// Canvas点击事件 - 选中格子
+patternCanvas.addEventListener('click', function(e) {
+    if (!patternData) return;
+
+    const rect = patternCanvas.getBoundingClientRect();
+    const scaleX = patternCanvas.width / rect.width;
+    const scaleY = patternCanvas.height / rect.height;
+
+    // 获取点击位置（考虑renderScale）
+    const clickX = (e.clientX - rect.left) * scaleX;
+    const clickY = (e.clientY - rect.top) * scaleY;
+
+    // 获取当前绘图参数（需要与drawPattern保持一致）
+    const container = document.querySelector('.pattern-canvas-wrapper');
+    const containerWidth = container.clientWidth - 16;
+    const containerHeight = container.clientHeight - 16;
+    const maxCellSize = 60;
+    const minCellSize = 8;
+    const showGrid = showGridCheckbox.checked;
+    const labelSize = showGrid ? 24 : 0;
+
+    const width = patternData.width;
+    const height = patternData.height;
+
+    const cellSizeByWidth = (containerWidth - labelSize) / width;
+    const cellSizeByHeight = (containerHeight - labelSize) / height;
+    const idealCellSize = Math.min(cellSizeByWidth, cellSizeByHeight);
+    const baseCellSize = Math.max(minCellSize, Math.min(maxCellSize, idealCellSize));
+    const cellSize = baseCellSize * zoomScale;
+
+    const renderScale = 4;
+    const scaledLabelSize = labelSize * renderScale;
+    const scaledCellSize = cellSize * renderScale;
+
+    // 计算格子坐标
+    const gridX = Math.floor((clickX - scaledLabelSize) / scaledCellSize);
+    const gridY = Math.floor((clickY - scaledLabelSize) / scaledCellSize);
+
+    // 检查是否在有效范围内
+    if (gridX >= 0 && gridX < width && gridY >= 0 && gridY < height) {
+        selectedCell = { x: gridX, y: gridY };
+        updateCoordinateInfo();
+
+        // 使用requestAnimationFrame确保DOM先渲染
+        requestAnimationFrame(() => {
+            drawPattern(patternData, width, height);
+        });
+    }
+});
+
+// 更新坐标信息显示
+function updateCoordinateInfo() {
+    if (!selectedCell || !patternData) {
+        coordinateInfo.style.display = 'none';
+        return;
+    }
+
+    const colLabel = getColumnLabel(selectedCell.x);
+    const rowLabel = selectedCell.y + 1;
+    const coordinate = `${colLabel}${rowLabel}`;
+
+    const index = selectedCell.y * patternData.width + selectedCell.x;
+    const color = patternData.pixels[index];
+
+    currentCoordinate.textContent = coordinate;
+    coordinateSwatch.style.backgroundColor = color.hex;
+    coordinateColorName.textContent = color.name;
+    coordinateInfo.style.display = 'flex';
+}
 
 // 控制面板切换
 toggleControlPanelBtn.addEventListener('click', function() {
