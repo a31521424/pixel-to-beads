@@ -30,6 +30,9 @@ const drawerOverlay = document.getElementById('drawerOverlay');
 const closeDrawerBtn = document.getElementById('closeDrawer');
 const showMaterialsBtn = document.getElementById('showMaterialsBtn');
 
+const toggleControlPanelBtn = document.getElementById('toggleControlPanel');
+const controlPanel = document.getElementById('controlPanel');
+
 const customColorPicker = document.getElementById('customColorPicker');
 const colorGrid = document.getElementById('colorGrid');
 const selectedColorCount = document.getElementById('selectedColorCount');
@@ -73,6 +76,17 @@ async function initialize() {
 
     console.log('拼豆图纸工具已加载 - MARD配色方案');
     console.log(`当前可用颜色数量: ${colorSchemeManager.getCurrentColors().length}`);
+
+    // 初始化控制面板切换按钮状态
+    updateTogglePanelButton();
+}
+
+function updateTogglePanelButton() {
+    if (controlPanel.classList.contains('collapsed')) {
+        toggleControlPanelBtn.textContent = '☰';
+    } else {
+        toggleControlPanelBtn.textContent = '✕';
+    }
 }
 
 imageInput.addEventListener('change', handleImageUpload);
@@ -518,6 +532,12 @@ function closeDrawer() {
 
 closeDrawerBtn.addEventListener('click', closeDrawer);
 drawerOverlay.addEventListener('click', closeDrawer);
+
+// 控制面板切换
+toggleControlPanelBtn.addEventListener('click', function() {
+    controlPanel.classList.toggle('collapsed');
+    updateTogglePanelButton();
+});
 
 let resizeTimeout;
 window.addEventListener('resize', function() {
