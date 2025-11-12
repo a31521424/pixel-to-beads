@@ -72,6 +72,17 @@ header {
     flex-shrink: 0;
 }
 
+.header-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+}
+
+.header-text {
+    flex: 1;
+}
+
 header h1 {
     font-size: 1.25em;
     font-weight: 600;
@@ -85,33 +96,48 @@ header h1 {
     font-weight: 400;
 }
 
-/* 页脚 */
-.app-footer {
-    background: var(--white);
-    border-top: 1px solid var(--gray-200);
-    padding: 16px 24px;
-    text-align: center;
-    flex-shrink: 0;
-    margin-top: auto;
-}
-
-.app-footer p {
-    margin: 0;
+.header-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     font-size: 0.8em;
     color: var(--gray-600);
-    line-height: 1.5;
 }
 
-.app-footer a {
+.header-info a {
+    display: flex;
+    align-items: center;
+    gap: 4px;
     color: var(--gray-700);
     text-decoration: none;
-    font-weight: 500;
-    transition: color 0.2s;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s;
 }
 
-.app-footer a:hover {
+.header-info a:hover {
+    background: var(--gray-100);
     color: var(--gray-900);
-    text-decoration: underline;
+}
+
+.header-info svg {
+    flex-shrink: 0;
+}
+
+.header-info .divider {
+    color: var(--gray-300);
+}
+
+.header-info .license {
+    color: var(--gray-600);
+    font-size: 0.9em;
+}
+
+/* 移动端隐藏header-info */
+@media (max-width: 767px) {
+    .header-info {
+        display: none;
+    }
 }
 
 .main-content {
