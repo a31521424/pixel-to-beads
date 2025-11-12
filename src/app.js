@@ -344,13 +344,13 @@ function drawPattern(data, width, height) {
                 // 根据 cellSize 动态调整字体大小
                 let fontSize;
                 if (cellSize >= 30) {
-                    fontSize = Math.floor(cellSize * 0.4);
-                } else if (cellSize >= 20) {
-                    fontSize = Math.floor(cellSize * 0.35);
-                } else if (cellSize >= 15) {
                     fontSize = Math.floor(cellSize * 0.3);
+                } else if (cellSize >= 20) {
+                    fontSize = Math.floor(cellSize * 0.28);
+                } else if (cellSize >= 15) {
+                    fontSize = Math.floor(cellSize * 0.25);
                 } else {
-                    fontSize = Math.max(6, Math.floor(cellSize * 0.25));
+                    fontSize = Math.max(5, Math.floor(cellSize * 0.2));
                 }
 
                 ctx.font = `bold ${fontSize}px Arial`;
