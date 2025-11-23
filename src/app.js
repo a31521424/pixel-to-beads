@@ -210,7 +210,7 @@ function generatePattern() {
     const width = parseInt(widthInput.value);
     const height = parseInt(heightInput.value);
 
-    const resizedImageData = resizeImage(uploadedImage, width, height);
+    const resizedImageData = resizeImageHighQuality(uploadedImage, width, height);
     patternData = quantizeColors(resizedImageData, width, height);
     generateMaterialsList(patternData);
 
@@ -232,21 +232,52 @@ function generatePattern() {
     });
 }
 
-function resizeImage(img, targetWidth, targetHeight) {
-    const canvas = document.createElement('canvas');
-    canvas.width = targetWidth;
-    canvas.height = targetHeight;
-    const ctx = canvas.getContext('2d');
+function resizeImageHighQuality(img, targetWidth, targetHeight) {
+    // 对于大幅缩小的图像，使用多步缩放以保留更多细节
+    const sourceWidth = img.width;
+    const sourceHeight = img.height;
+    const scaleRatio = Math.min(targetWidth / sourceWidth, targetHeight / sourceHeight);
 
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+    let currentCanvas = document.createElement('canvas');
+    let currentCtx = currentCanvas.getContext('2d');
 
-    return ctx.getImageData(0, 0, targetWidth, targetHeight);
+    // 如果缩放比例小于0.5，使用两步缩放
+    if (scaleRatio < 0.5) {
+        // 第一步：缩小到目标的2倍
+        const intermediateWidth = Math.round(targetWidth * 2);
+        const intermediateHeight = Math.round(targetHeight * 2);
+
+        currentCanvas.width = intermediateWidth;
+        currentCanvas.height = intermediateHeight;
+        currentCtx.imageSmoothingEnabled = true;
+        currentCtx.imageSmoothingQuality = 'high';
+        currentCtx.drawImage(img, 0, 0, intermediateWidth, intermediateHeight);
+
+        // 第二步：从2倍缩小到目标尺寸
+        const finalCanvas = document.createElement('canvas');
+        finalCanvas.width = targetWidth;
+        finalCanvas.height = targetHeight;
+        const finalCtx = finalCanvas.getContext('2d');
+        finalCtx.imageSmoothingEnabled = true;
+        finalCtx.imageSmoothingQuality = 'high';
+        finalCtx.drawImage(currentCanvas, 0, 0, targetWidth, targetHeight);
+
+        return finalCtx.getImageData(0, 0, targetWidth, targetHeight);
+    } else {
+        // 直接一步缩放
+        currentCanvas.width = targetWidth;
+        currentCanvas.height = targetHeight;
+        currentCtx.imageSmoothingEnabled = true;
+        currentCtx.imageSmoothingQuality = 'high';
+        currentCtx.drawImage(img, 0, 0, targetWidth, targetHeight);
+
+        return currentCtx.getImageData(0, 0, targetWidth, targetHeight);
+    }
 }
 
 function quantizeColors(imageData, width, height) {
-    const pixels = [];
     const BEAD_COLORS = colorSchemeManager.getCurrentColors();
+    const pixels = [];
 
     for (let i = 0; i < imageData.data.length; i += 4) {
         const r = imageData.data[i];
@@ -295,7 +326,10 @@ function colorDistance(rgb1, rgb2) {
     const dr = rgb1[0] - rgb2[0];
     const dg = rgb1[1] - rgb2[1];
     const db = rgb1[2] - rgb2[2];
-    return Math.sqrt(dr * dr + dg * dg + db * db);
+
+    // 使用加权欧氏距离，考虑人眼对不同颜色的敏感度
+    // 人眼对绿色最敏感，其次是红色，最后是蓝色
+    return Math.sqrt(2 * dr * dr + 4 * dg * dg + 3 * db * db);
 }
 
 function drawPattern(data, width, height) {
