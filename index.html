@@ -91,6 +91,17 @@
                     </div>
 
                     <div class="setting-item">
+                        <label for="patternStrategy">图像策略:</label>
+                        <select id="patternStrategy" class="pattern-strategy-select">
+                            <option value="smart_default" selected>通用优化（默认）</option>
+                            <option value="cartoon">卡通角色</option>
+                            <option value="portrait">真人像素化</option>
+                            <option value="icon">图标 / 像素风</option>
+                        </select>
+                        <p class="strategy-description">平衡色块统一、层次保留和细节，可作为大多数图片的默认策略。</p>
+                    </div>
+
+                    <div class="setting-item">
                         <label for="widthInput">宽度（珠子数量）:</label>
                         <div class="input-with-unit">
                             <input type="number" id="widthInput" min="10" max="100" value="30">

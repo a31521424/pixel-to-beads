@@ -21,6 +21,31 @@
 
 import mardColorData from './mard-color.json';
 
+function srgbChannelToLinear(value) {
+    const channel = value / 255;
+    return channel <= 0.04045
+        ? channel / 12.92
+        : ((channel + 0.055) / 1.055) ** 2.4;
+}
+
+function rgbToOklab(rgb) {
+    const [r, g, b] = rgb.map(srgbChannelToLinear);
+
+    const l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
+    const m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
+    const s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
+
+    const lRoot = Math.cbrt(l);
+    const mRoot = Math.cbrt(m);
+    const sRoot = Math.cbrt(s);
+
+    return {
+        L: 0.2104542553 * lRoot + 0.793617785 * mRoot - 0.0040720468 * sRoot,
+        a: 1.9779984951 * lRoot - 2.428592205 * mRoot + 0.4505937099 * sRoot,
+        b: 0.0259040371 * lRoot + 0.7827717662 * mRoot - 0.808675766 * sRoot
+    };
+}
+
 class ColorSchemeManager {
     constructor() {
         this.schemes = {
@@ -41,11 +66,15 @@ class ColorSchemeManager {
         try {
             this.schemes.mard.colors = Object.entries(mardColorData).map(([code, hex]) => {
                 const rgb = this.hexToRgb(hex);
+                const lab = rgbToOklab(rgb);
                 return {
                     name: code,
                     code: code,
                     hex: hex,
-                    rgb: rgb
+                    rgb: rgb,
+                    lab: lab,
+                    chroma: Math.sqrt(lab.a * lab.a + lab.b * lab.b),
+                    lightness: lab.L
                 };
             });
 

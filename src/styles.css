@@ -283,7 +283,8 @@ section h2 {
     font-size: 0.85em;
 }
 
-.preset-description {
+.preset-description,
+.strategy-description {
     margin-top: 6px;
     font-size: 0.75em;
     color: var(--gray-500);

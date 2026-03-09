@@ -21,6 +21,7 @@
 
 import { colorSchemeManager } from './colorSchemes.js';
 import { COLOR_PRESETS, customColorManager } from './colorPresets.js';
+import { DEFAULT_PATTERN_STRATEGY, PATTERN_STRATEGIES } from './renderStrategies.js';
 
 let uploadedImage = null;
 let patternData = null;
@@ -33,6 +34,7 @@ const widthInput = document.getElementById('widthInput');
 const heightInput = document.getElementById('heightInput');
 const keepRatioCheckbox = document.getElementById('keepRatio');
 const colorPresetSelect = document.getElementById('colorPreset');
+const patternStrategySelect = document.getElementById('patternStrategy');
 const editCustomColorsBtn = document.getElementById('editCustomColors');
 const generateBtn = document.getElementById('generateBtn');
 const resultArea = document.getElementById('resultArea');
@@ -72,6 +74,7 @@ const closeColorPickerBtn = document.getElementById('closeColorPicker');
 const cancelColorSelectionBtn = document.getElementById('cancelColorSelection');
 const confirmColorSelectionBtn = document.getElementById('confirmColorSelection');
 const presetDescription = document.querySelector('.preset-description');
+const strategyDescription = document.querySelector('.strategy-description');
 
 let showMaterialCounts = false;
 let tempCustomColors = [];
@@ -83,9 +86,11 @@ let selectedCell = null; // {x, y} 选中的格子坐标
 let highlightSameColor = false; // 是否高亮相同颜色
 let hideSameColor = false; // 是否隐藏相同颜色
 let previousPreset = 'all_colors'; // 记录打开自定义选择器前的预设
+let currentPatternStrategyId = DEFAULT_PATTERN_STRATEGY;
 
 async function initialize() {
     await colorSchemeManager.loadMardColors();
+    currentPatternStrategyId = patternStrategySelect.value || DEFAULT_PATTERN_STRATEGY;
 
     const savedCustomColors = customColorManager.getColors();
     if (savedCustomColors.length > 0) {
@@ -115,6 +120,7 @@ async function initialize() {
 
     console.log('拼豆图纸工具已加载 - MARD配色方案');
     console.log(`当前可用颜色数量: ${colorSchemeManager.getCurrentColors().length}`);
+    updatePatternStrategyDescription();
 
     // 初始化控制面板切换按钮状态
     updateTogglePanelButton();
@@ -125,6 +131,21 @@ function updateTogglePanelButton() {
         toggleControlPanelBtn.textContent = '☰';
     } else {
         toggleControlPanelBtn.textContent = '✕';
+    }
+}
+
+function getCurrentPatternStrategy() {
+    return PATTERN_STRATEGIES[currentPatternStrategyId] || PATTERN_STRATEGIES[DEFAULT_PATTERN_STRATEGY];
+}
+
+function updatePatternStrategyDescription() {
+    const strategy = getCurrentPatternStrategy();
+    strategyDescription.textContent = strategy.description;
+}
+
+function regeneratePatternIfPossible() {
+    if (uploadedImage && patternData) {
+        generatePattern();
     }
 }
 
@@ -209,9 +230,10 @@ function generatePattern() {
 
     const width = parseInt(widthInput.value);
     const height = parseInt(heightInput.value);
+    const strategy = getCurrentPatternStrategy();
 
-    const resizedImageData = resizeImageHighQuality(uploadedImage, width, height);
-    patternData = quantizeColors(resizedImageData, width, height);
+    const resizedImageData = resizeImageHighQuality(uploadedImage, width, height, strategy);
+    patternData = quantizeColors(resizedImageData, width, height, strategy);
     generateMaterialsList(patternData);
 
     // 重置缩放和选中
@@ -232,14 +254,23 @@ function generatePattern() {
     });
 }
 
-function resizeImageHighQuality(img, targetWidth, targetHeight) {
+function resizeImageHighQuality(img, targetWidth, targetHeight, strategy) {
     // 对于大幅缩小的图像，使用多步缩放以保留更多细节
     const sourceWidth = img.width;
     const sourceHeight = img.height;
     const scaleRatio = Math.min(targetWidth / sourceWidth, targetHeight / sourceHeight);
+    const usePixelatedResize = strategy.resizeMode === 'pixelated';
 
     let currentCanvas = document.createElement('canvas');
     let currentCtx = currentCanvas.getContext('2d');
+
+    if (usePixelatedResize) {
+        currentCanvas.width = targetWidth;
+        currentCanvas.height = targetHeight;
+        currentCtx.imageSmoothingEnabled = false;
+        currentCtx.drawImage(img, 0, 0, targetWidth, targetHeight);
+        return currentCtx.getImageData(0, 0, targetWidth, targetHeight);
+    }
 
     // 如果缩放比例小于0.5，使用两步缩放
     if (scaleRatio < 0.5) {
@@ -275,46 +306,177 @@ function resizeImageHighQuality(img, targetWidth, targetHeight) {
     }
 }
 
-function quantizeColors(imageData, width, height) {
-    const BEAD_COLORS = colorSchemeManager.getCurrentColors();
-    const pixels = [];
+function quantizeColors(imageData, width, height, strategy) {
+    const beadColors = colorSchemeManager.getCurrentColors();
+    const sourcePixels = preprocessSourcePixels(imageData, width, height, strategy);
+    let pixels = sourcePixels.map(pixel => findClosestBeadColor(pixel, beadColors, strategy));
 
-    for (let i = 0; i < imageData.data.length; i += 4) {
-        const r = imageData.data[i];
-        const g = imageData.data[i + 1];
-        const b = imageData.data[i + 2];
-        const a = imageData.data[i + 3];
-
-        if (a < 128) {
-            pixels.push(findClosestBeadColor([255, 255, 255], BEAD_COLORS));
-        } else {
-            pixels.push(findClosestBeadColor([r, g, b], BEAD_COLORS));
-        }
+    if (strategy.coherence.passes > 0) {
+        pixels = applySpatialCoherence(sourcePixels, pixels, width, height, strategy);
     }
 
-    const colorCounts = {};
-    pixels.forEach(color => {
-        colorCounts[color.name] = (colorCounts[color.name] || 0) + 1;
-    });
-
-    const palette = BEAD_COLORS.filter(color => colorCounts[color.name] > 0);
+    if (strategy.despeckle.maxRegionSize > 0) {
+        pixels = despeckleRegions(sourcePixels, pixels, width, height, strategy);
+    }
 
     return {
         pixels: pixels,
         width: width,
         height: height,
-        palette: palette
+        palette: collectUsedPalette(pixels)
     };
 }
 
-function findClosestBeadColor(rgb, BEAD_COLORS) {
-    let minDistance = Infinity;
-    let closestColor = BEAD_COLORS[0];
+function srgbChannelToLinear(value) {
+    const channel = value / 255;
+    return channel <= 0.04045
+        ? channel / 12.92
+        : ((channel + 0.055) / 1.055) ** 2.4;
+}
 
-    for (const beadColor of BEAD_COLORS) {
-        const distance = colorDistance(rgb, beadColor.rgb);
-        if (distance < minDistance) {
-            minDistance = distance;
+function rgbToOklab(rgb) {
+    const [r, g, b] = rgb.map(srgbChannelToLinear);
+
+    const l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
+    const m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
+    const s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
+
+    const lRoot = Math.cbrt(l);
+    const mRoot = Math.cbrt(m);
+    const sRoot = Math.cbrt(s);
+
+    return {
+        L: 0.2104542553 * lRoot + 0.793617785 * mRoot - 0.0040720468 * sRoot,
+        a: 1.9779984951 * lRoot - 2.428592205 * mRoot + 0.4505937099 * sRoot,
+        b: 0.0259040371 * lRoot + 0.7827717662 * mRoot - 0.808675766 * sRoot
+    };
+}
+
+function clampChannel(value) {
+    return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function getRgbBrightness(rgb) {
+    return (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 255000;
+}
+
+function createPixelInfo(rgb, alpha = 255) {
+    const safeRgb = rgb.map(clampChannel);
+    const lab = rgbToOklab(safeRgb);
+    return {
+        rgb: safeRgb,
+        alpha: alpha,
+        lab: lab,
+        chroma: Math.sqrt(lab.a * lab.a + lab.b * lab.b),
+        brightness: getRgbBrightness(safeRgb)
+    };
+}
+
+function preprocessSourcePixels(imageData, width, height, strategy) {
+    const pixels = [];
+
+    for (let i = 0; i < imageData.data.length; i += 4) {
+        const alpha = imageData.data[i + 3];
+        const rgb = alpha < 128
+            ? [255, 255, 255]
+            : [imageData.data[i], imageData.data[i + 1], imageData.data[i + 2]];
+
+        pixels.push(createPixelInfo(rgb, alpha));
+    }
+
+    if (!strategy.smoothing.enabled) {
+        return pixels;
+    }
+
+    return flattenLowVariancePixels(pixels, width, height, strategy.smoothing);
+}
+
+function flattenLowVariancePixels(sourcePixels, width, height, smoothing) {
+    const smoothedPixels = new Array(sourcePixels.length);
+    const { radius, strength, varianceThreshold } = smoothing;
+
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const index = y * width + x;
+            const neighbors = collectNeighborIndexes(x, y, width, height, radius);
+            let sumR = 0;
+            let sumG = 0;
+            let sumB = 0;
+
+            neighbors.forEach(neighborIndex => {
+                const neighbor = sourcePixels[neighborIndex];
+                sumR += neighbor.rgb[0];
+                sumG += neighbor.rgb[1];
+                sumB += neighbor.rgb[2];
+            });
+
+            const averageRgb = [
+                sumR / neighbors.length,
+                sumG / neighbors.length,
+                sumB / neighbors.length
+            ];
+
+            let variance = 0;
+            neighbors.forEach(neighborIndex => {
+                const neighbor = sourcePixels[neighborIndex];
+                variance += colorDistanceRgb(neighbor.rgb, averageRgb) ** 2;
+            });
+
+            variance = variance / neighbors.length / (255 * 255);
+            if (variance <= varianceThreshold) {
+                const original = sourcePixels[index].rgb;
+                const blendedRgb = [
+                    original[0] * (1 - strength) + averageRgb[0] * strength,
+                    original[1] * (1 - strength) + averageRgb[1] * strength,
+                    original[2] * (1 - strength) + averageRgb[2] * strength
+                ];
+                smoothedPixels[index] = createPixelInfo(blendedRgb, sourcePixels[index].alpha);
+            } else {
+                smoothedPixels[index] = sourcePixels[index];
+            }
+        }
+    }
+
+    return smoothedPixels;
+}
+
+function collectNeighborIndexes(x, y, width, height, radius = 1) {
+    const indexes = [];
+
+    for (let offsetY = -radius; offsetY <= radius; offsetY++) {
+        for (let offsetX = -radius; offsetX <= radius; offsetX++) {
+            const nextX = x + offsetX;
+            const nextY = y + offsetY;
+
+            if (nextX < 0 || nextX >= width || nextY < 0 || nextY >= height) {
+                continue;
+            }
+
+            indexes.push(nextY * width + nextX);
+        }
+    }
+
+    return indexes;
+}
+
+function collectUsedPalette(pixels) {
+    const paletteMap = new Map();
+    pixels.forEach(color => {
+        if (!paletteMap.has(color.code)) {
+            paletteMap.set(color.code, color);
+        }
+    });
+    return Array.from(paletteMap.values());
+}
+
+function findClosestBeadColor(sourcePixel, beadColors, strategy) {
+    let minScore = Infinity;
+    let closestColor = beadColors[0];
+
+    for (const beadColor of beadColors) {
+        const score = getColorMatchScore(sourcePixel, beadColor, strategy);
+        if (score < minScore) {
+            minScore = score;
             closestColor = beadColor;
         }
     }
@@ -322,14 +484,179 @@ function findClosestBeadColor(rgb, BEAD_COLORS) {
     return closestColor;
 }
 
-function colorDistance(rgb1, rgb2) {
+function getColorMatchScore(sourcePixel, beadColor, strategy) {
+    const baseDistance = strategy.distanceMode === 'oklab'
+        ? colorDistanceOklab(sourcePixel.lab, beadColor.lab)
+        : colorDistanceRgb(sourcePixel.rgb, beadColor.rgb) / 255;
+
+    const neutralBias = strategy.neutralBias;
+    if (!neutralBias.enabled) {
+        return baseDistance;
+    }
+
+    const isLowChromaHighlight = sourcePixel.lab.L >= neutralBias.minLightness &&
+        sourcePixel.chroma <= neutralBias.maxChroma;
+
+    if (!isLowChromaHighlight) {
+        return baseDistance;
+    }
+
+    let score = baseDistance;
+    score += Math.max(0, sourcePixel.lab.L - beadColor.lightness) * neutralBias.darkPenalty;
+    score += Math.max(0, beadColor.lab.b - sourcePixel.lab.b) * neutralBias.warmPenalty;
+    score += beadColor.chroma * neutralBias.chromaPenalty;
+    score -= beadColor.lightness * neutralBias.lightReward;
+
+    return score;
+}
+
+function colorDistanceRgb(rgb1, rgb2) {
     const dr = rgb1[0] - rgb2[0];
     const dg = rgb1[1] - rgb2[1];
     const db = rgb1[2] - rgb2[2];
 
-    // 使用加权欧氏距离，考虑人眼对不同颜色的敏感度
-    // 人眼对绿色最敏感，其次是红色，最后是蓝色
     return Math.sqrt(2 * dr * dr + 4 * dg * dg + 3 * db * db);
+}
+
+function colorDistanceOklab(lab1, lab2) {
+    const dL = (lab1.L - lab2.L) * 1.6;
+    const dA = lab1.a - lab2.a;
+    const dB = lab1.b - lab2.b;
+    return Math.sqrt(dL * dL + dA * dA + dB * dB);
+}
+
+function applySpatialCoherence(sourcePixels, pixels, width, height, strategy) {
+    let currentPixels = [...pixels];
+
+    for (let pass = 0; pass < strategy.coherence.passes; pass++) {
+        const nextPixels = [...currentPixels];
+
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const index = y * width + x;
+                const currentColor = currentPixels[index];
+                const neighborCounts = new Map();
+                const neighbors = collectNeighborIndexes(x, y, width, height, 1)
+                    .filter(neighborIndex => neighborIndex !== index);
+
+                neighbors.forEach(neighborIndex => {
+                    const neighborColor = currentPixels[neighborIndex];
+                    const count = neighborCounts.get(neighborColor.code) || {
+                        color: neighborColor,
+                        count: 0
+                    };
+                    count.count += 1;
+                    neighborCounts.set(neighborColor.code, count);
+                });
+
+                let dominantEntry = null;
+                neighborCounts.forEach(entry => {
+                    if (!dominantEntry || entry.count > dominantEntry.count) {
+                        dominantEntry = entry;
+                    }
+                });
+
+                if (!dominantEntry ||
+                    dominantEntry.count < strategy.coherence.minDominantNeighbors ||
+                    dominantEntry.color.code === currentColor.code) {
+                    continue;
+                }
+
+                const currentScore = getColorMatchScore(sourcePixels[index], currentColor, strategy);
+                const dominantScore = getColorMatchScore(sourcePixels[index], dominantEntry.color, strategy);
+
+                if (dominantScore <= currentScore + strategy.coherence.maxDelta) {
+                    nextPixels[index] = dominantEntry.color;
+                }
+            }
+        }
+
+        currentPixels = nextPixels;
+    }
+
+    return currentPixels;
+}
+
+function despeckleRegions(sourcePixels, pixels, width, height, strategy) {
+    const nextPixels = [...pixels];
+    const visited = new Array(pixels.length).fill(false);
+    const maxRegionSize = strategy.despeckle.maxRegionSize;
+
+    for (let startIndex = 0; startIndex < pixels.length; startIndex++) {
+        if (visited[startIndex]) {
+            continue;
+        }
+
+        const targetColor = nextPixels[startIndex];
+        const region = [];
+        const boundaryCounts = new Map();
+        const stack = [startIndex];
+        visited[startIndex] = true;
+
+        while (stack.length > 0) {
+            const index = stack.pop();
+            region.push(index);
+
+            const x = index % width;
+            const y = Math.floor(index / width);
+            const neighbors = [
+                [x - 1, y],
+                [x + 1, y],
+                [x, y - 1],
+                [x, y + 1]
+            ];
+
+            neighbors.forEach(([nextX, nextY]) => {
+                if (nextX < 0 || nextX >= width || nextY < 0 || nextY >= height) {
+                    return;
+                }
+
+                const neighborIndex = nextY * width + nextX;
+                const neighborColor = nextPixels[neighborIndex];
+
+                if (neighborColor.code === targetColor.code) {
+                    if (!visited[neighborIndex]) {
+                        visited[neighborIndex] = true;
+                        stack.push(neighborIndex);
+                    }
+                    return;
+                }
+
+                const entry = boundaryCounts.get(neighborColor.code) || {
+                    color: neighborColor,
+                    count: 0
+                };
+                entry.count += 1;
+                boundaryCounts.set(neighborColor.code, entry);
+            });
+        }
+
+        if (region.length > maxRegionSize || boundaryCounts.size === 0) {
+            continue;
+        }
+
+        let replacement = null;
+        boundaryCounts.forEach(entry => {
+            if (!replacement || entry.count > replacement.count) {
+                replacement = entry;
+            }
+        });
+
+        if (!replacement) {
+            continue;
+        }
+
+        region.forEach(index => {
+            const currentScore = getColorMatchScore(sourcePixels[index], nextPixels[index], strategy);
+            const replacementScore = getColorMatchScore(sourcePixels[index], replacement.color, strategy);
+
+            if (replacementScore <= currentScore + 0.12) {
+                nextPixels[index] = replacement.color;
+            }
+        });
+    }
+
+    return nextPixels;
 }
 
 function drawPattern(data, width, height) {
@@ -787,6 +1114,12 @@ downloadBtn.addEventListener('click', function() {
     link.click();
 });
 
+patternStrategySelect.addEventListener('change', function() {
+    currentPatternStrategyId = this.value;
+    updatePatternStrategyDescription();
+    regeneratePatternIfPossible();
+});
+
 colorPresetSelect.addEventListener('change', function() {
     const selectedPreset = this.value;
 
@@ -809,9 +1142,7 @@ colorPresetSelect.addEventListener('change', function() {
 
             presetDescription.textContent = preset.description;
 
-            if (patternData && uploadedImage) {
-                generatePattern();
-            }
+            regeneratePatternIfPossible();
         }
     }
 });
@@ -929,9 +1260,7 @@ confirmColorSelectionBtn.addEventListener('click', function() {
 
     closeCustomColorPicker();
 
-    if (patternData && uploadedImage) {
-        generatePattern();
-    }
+    regeneratePatternIfPossible();
 });
 
 document.addEventListener('keydown', function(e) {
