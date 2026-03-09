@@ -126,6 +126,19 @@
 
                     <button id="generateBtn" class="btn-primary" disabled>生成图纸</button>
                 </section>
+
+                <div class="control-panel-footer">
+                    <p class="feedback-entry-label">有想法想说？</p>
+                    <a
+                        class="moaform-embed moaform-style-button feedback-entry-btn"
+                        href="https://moaform.com/q/7EAjcp?embed"
+                        data-type="popup"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        留言反馈
+                    </a>
+                </div>
             </div>
 
             <!-- 右侧：结果显示 -->
@@ -263,5 +276,13 @@
     </script>
 
     <script type="module" src="/src/app.js"></script>
+    <script>
+    (function() {
+        var s = document.createElement('script');
+        s.src = 'https://asset.moaform.com/embed/e.js';
+        var b = document.getElementsByTagName('body')[0];
+        b.insertBefore(s, b.firstChild);
+    })();
+    </script>
 </body>
 </html>
