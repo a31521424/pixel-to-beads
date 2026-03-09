@@ -132,11 +132,20 @@ async function initialize() {
 }
 
 function updateTogglePanelButton() {
-    if (controlPanel.classList.contains('collapsed')) {
-        toggleControlPanelBtn.textContent = '☰';
-    } else {
-        toggleControlPanelBtn.textContent = '✕';
+    const isDesktop = window.innerWidth >= 1024;
+    const isCollapsed = controlPanel.classList.contains('collapsed');
+    toggleControlPanelBtn.classList.toggle('is-collapsed', isCollapsed);
+
+    if (isDesktop) {
+        toggleControlPanelBtn.textContent = isCollapsed ? '▶' : '◀';
+        toggleControlPanelBtn.title = isCollapsed ? '展开左侧控制面板' : '收起左侧控制面板';
+        toggleControlPanelBtn.setAttribute('aria-label', toggleControlPanelBtn.title);
+        return;
     }
+
+    toggleControlPanelBtn.textContent = isCollapsed ? '☰' : '✕';
+    toggleControlPanelBtn.title = isCollapsed ? '展开控制面板' : '收起控制面板';
+    toggleControlPanelBtn.setAttribute('aria-label', toggleControlPanelBtn.title);
 }
 
 function getCurrentPatternStrategy() {
@@ -1231,6 +1240,7 @@ let resizeTimeout;
 window.addEventListener('resize', function() {
     clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(function() {
+        updateTogglePanelButton();
         if (patternData) {
             drawPattern(patternData, patternData.width, patternData.height);
         }
