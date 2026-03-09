@@ -78,15 +78,15 @@
                     <div class="setting-item">
                         <label for="colorPreset">颜色模版:</label>
                         <select id="colorPreset" class="color-preset-select">
-                            <option value="all_colors" selected>全色系（293色）</option>
+                            <option value="all_colors">全色系（293色）</option>
                             <option value="basic_10">入门10色</option>
                             <option value="standard_20">标准20色</option>
                             <option value="advanced_30">进阶30色</option>
                             <option value="professional_50">专业50色</option>
-                            <option value="complete_100">大师100色</option>
+                            <option value="complete_100" selected>大师100色</option>
                             <option value="custom">自定义颜色...</option>
                         </select>
-                        <p class="preset-description">MARD完整色系，适合专业级作品</p>
+                        <p class="preset-description">超大型作品，极致色彩表现</p>
                         <button id="editCustomColors" class="btn-secondary" style="display: none; margin-top: 8px;">修改颜色选择</button>
                     </div>
 
@@ -104,7 +104,7 @@
                     <div class="setting-item">
                         <label for="widthInput">宽度（珠子数量）:</label>
                         <div class="input-with-unit">
-                            <input type="number" id="widthInput" min="10" max="100" value="30">
+                            <input type="number" id="widthInput" min="10" max="100" value="52">
                             <span class="unit">珠</span>
                         </div>
                     </div>
@@ -112,7 +112,7 @@
                     <div class="setting-item">
                         <label for="heightInput">高度（珠子数量）:</label>
                         <div class="input-with-unit">
-                            <input type="number" id="heightInput" min="10" max="100" value="30">
+                            <input type="number" id="heightInput" min="10" max="100" value="52">
                             <span class="unit">珠</span>
                         </div>
                     </div>
@@ -192,7 +192,9 @@
                 <div class="drawer-body">
                     <div class="materials-actions">
                         <button id="toggleDetails" class="toggle-details">显示数量</button>
+                        <button id="resetRemovedColors" class="toggle-details" style="display: none;">恢复已取消颜色</button>
                     </div>
+                    <p id="materialsHint" class="materials-hint">可在这里查看用量较少的色豆，并手动取消后自动替换为最近色。</p>
                     <div id="materialsList" class="materials-list"></div>
                     <div class="total-beads">
                         总珠子数: <span id="totalBeads">0</span> 颗

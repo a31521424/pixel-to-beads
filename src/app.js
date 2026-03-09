@@ -49,6 +49,8 @@ const zoomResetBtn = document.getElementById('zoomResetBtn');
 const zoomLevelSpan = document.getElementById('zoomLevel');
 const materialsList = document.getElementById('materialsList');
 const toggleDetailsBtn = document.getElementById('toggleDetails');
+const resetRemovedColorsBtn = document.getElementById('resetRemovedColors');
+const materialsHint = document.getElementById('materialsHint');
 const totalBeadsSpan = document.getElementById('totalBeads');
 
 const materialsDrawer = document.getElementById('materialsDrawer');
@@ -82,11 +84,14 @@ let zoomScale = 1.0;
 const zoomStep = 0.2;
 const minZoom = 0.5;
 const maxZoom = 3.0;
+const DEFAULT_SHORTEST_EDGE = 52;
+const MAX_PATTERN_EDGE = 100;
 let selectedCell = null; // {x, y} 选中的格子坐标
 let highlightSameColor = false; // 是否高亮相同颜色
 let hideSameColor = false; // 是否隐藏相同颜色
-let previousPreset = 'all_colors'; // 记录打开自定义选择器前的预设
+let previousPreset = 'complete_100'; // 记录打开自定义选择器前的预设
 let currentPatternStrategyId = DEFAULT_PATTERN_STRATEGY;
+let removedColorCodes = new Set();
 
 async function initialize() {
     await colorSchemeManager.loadMardColors();
@@ -218,33 +223,93 @@ keepRatioCheckbox.addEventListener('change', function() {
 });
 
 function updateDimensionsFromRatio(imgWidth, imgHeight) {
-    const targetWidth = parseInt(widthInput.value);
-    const ratio = imgHeight / imgWidth;
-    heightInput.value = Math.round(targetWidth * ratio);
+    let targetWidth;
+    let targetHeight;
+
+    if (imgWidth <= imgHeight) {
+        targetWidth = DEFAULT_SHORTEST_EDGE;
+        targetHeight = Math.round(DEFAULT_SHORTEST_EDGE * (imgHeight / imgWidth));
+    } else {
+        targetHeight = DEFAULT_SHORTEST_EDGE;
+        targetWidth = Math.round(DEFAULT_SHORTEST_EDGE * (imgWidth / imgHeight));
+    }
+
+    const longestEdge = Math.max(targetWidth, targetHeight);
+    if (longestEdge > MAX_PATTERN_EDGE) {
+        const scale = MAX_PATTERN_EDGE / longestEdge;
+        targetWidth = Math.max(10, Math.round(targetWidth * scale));
+        targetHeight = Math.max(10, Math.round(targetHeight * scale));
+    }
+
+    widthInput.value = targetWidth;
+    heightInput.value = targetHeight;
 }
 
-generateBtn.addEventListener('click', generatePattern);
+generateBtn.addEventListener('click', function() {
+    generatePattern();
+});
 
-function generatePattern() {
+function getAvailableBeadColors() {
+    const activeColors = colorSchemeManager.getCurrentColors();
+    if (removedColorCodes.size === 0) {
+        return activeColors;
+    }
+
+    return activeColors.filter(color => !removedColorCodes.has(color.code));
+}
+
+function generatePattern(options = {}) {
     if (!uploadedImage) return;
+    const {
+        preserveRemovedColors = false,
+        preserveViewState = false,
+        sourcePixels = null
+    } = options;
 
     const width = parseInt(widthInput.value);
     const height = parseInt(heightInput.value);
     const strategy = getCurrentPatternStrategy();
+    const previousSelectedCell = selectedCell ? { ...selectedCell } : null;
 
-    const resizedImageData = resizeImageHighQuality(uploadedImage, width, height, strategy);
-    patternData = quantizeColors(resizedImageData, width, height, strategy);
-    generateMaterialsList(patternData);
+    if (!preserveRemovedColors) {
+        removedColorCodes = new Set();
+    }
+
+    const nextSourcePixels = sourcePixels || preprocessSourcePixels(
+        resizeImageHighQuality(uploadedImage, width, height, strategy),
+        width,
+        height,
+        strategy
+    );
+    const availableBeadColors = getAvailableBeadColors();
+
+    if (availableBeadColors.length === 0) {
+        alert('当前没有可用于替换的颜色，请先恢复已取消颜色。');
+        if (preserveRemovedColors) {
+            removedColorCodes.clear();
+        }
+        return;
+    }
+
+    patternData = quantizeColors(nextSourcePixels, width, height, strategy, availableBeadColors);
+    generateMaterialsList(patternData, { preserveCounts: preserveViewState });
 
     // 重置缩放和选中
-    zoomScale = 1.0;
-    selectedCell = null;
-    highlightSameColor = false;
-    hideSameColor = false;
-    coordinateInfo.style.display = 'none';
-    highlightSameColorBtn.classList.remove('active');
-    hideSameColorBtn.classList.remove('active');
-    updateZoomLevel();
+    if (preserveViewState) {
+        selectedCell = previousSelectedCell;
+        if (selectedCell) {
+            updateCoordinateInfo();
+        }
+    } else {
+        zoomScale = 1.0;
+        selectedCell = null;
+        highlightSameColor = false;
+        hideSameColor = false;
+        coordinateInfo.style.display = 'none';
+        highlightSameColorBtn.classList.remove('active');
+        hideSameColorBtn.classList.remove('active');
+        updateZoomLevel();
+    }
 
     resultArea.style.display = 'none';
     patternContainer.style.display = 'flex';
@@ -306,9 +371,7 @@ function resizeImageHighQuality(img, targetWidth, targetHeight, strategy) {
     }
 }
 
-function quantizeColors(imageData, width, height, strategy) {
-    const beadColors = colorSchemeManager.getCurrentColors();
-    const sourcePixels = preprocessSourcePixels(imageData, width, height, strategy);
+function quantizeColors(sourcePixels, width, height, strategy, beadColors) {
     let pixels = sourcePixels.map(pixel => findClosestBeadColor(pixel, beadColors, strategy));
 
     if (strategy.coherence.passes > 0) {
@@ -323,7 +386,9 @@ function quantizeColors(imageData, width, height, strategy) {
         pixels: pixels,
         width: width,
         height: height,
-        palette: collectUsedPalette(pixels)
+        palette: collectUsedPalette(pixels),
+        sourcePixels: sourcePixels,
+        removedColorCodes: Array.from(removedColorCodes)
     };
 }
 
@@ -862,8 +927,22 @@ function isColorDark(rgb) {
     return brightness < 128;
 }
 
-function generateMaterialsList(data) {
+function updateMaterialActionState() {
+    if (removedColorCodes.size > 0) {
+        resetRemovedColorsBtn.style.display = 'inline-flex';
+        materialsHint.textContent = `已取消 ${removedColorCodes.size} 种颜色。你也可以继续取消其他少量用色，系统会按当前策略自动替换为最近色。`;
+        return;
+    }
+
+    resetRemovedColorsBtn.style.display = 'none';
+    materialsHint.textContent = '可在这里查看用量较少的色豆，并手动取消后自动替换为最近色。';
+}
+
+function generateMaterialsList(data, options = {}) {
+    const { preserveCounts = false } = options;
     const colorCounts = {};
+    const activeColors = getAvailableBeadColors();
+    const canReplaceMoreColors = activeColors.length > 1;
 
     data.pixels.forEach(color => {
         colorCounts[color.name] = (colorCounts[color.name] || 0) + 1;
@@ -883,20 +962,61 @@ function generateMaterialsList(data) {
 
         const item = document.createElement('div');
         item.className = 'material-item';
+        const isLowUsage = count <= 9;
         item.innerHTML = `
-            <div class="color-swatch" style="background-color: ${color.hex}"></div>
-            <div class="material-info">
-                <div class="material-name">${color.name}</div>
-                <div class="material-count">${count} 颗</div>
+            <div class="material-main">
+                <div class="color-swatch" style="background-color: ${color.hex}"></div>
+                <div class="material-info">
+                    <div class="material-name-row">
+                        <div class="material-name">${color.name}</div>
+                        ${isLowUsage ? '<span class="material-badge">少量</span>' : ''}
+                    </div>
+                    <div class="material-count">${count} 颗</div>
+                </div>
             </div>
         `;
+
+        const actionButton = document.createElement('button');
+        actionButton.className = 'material-action-btn';
+        actionButton.textContent = '取消并替换';
+        actionButton.disabled = !canReplaceMoreColors;
+        actionButton.title = canReplaceMoreColors
+            ? `移除 ${color.name}，并按当前策略自动替换为最接近的剩余颜色`
+            : '至少需要保留两种可用颜色';
+        actionButton.addEventListener('click', function() {
+            removeColorAndRerender(color.code);
+        });
+
+        item.appendChild(actionButton);
         materialsList.appendChild(item);
     });
 
     totalBeadsSpan.textContent = totalBeads;
+    updateMaterialActionState();
 
-    showMaterialCounts = false;
+    if (!preserveCounts) {
+        showMaterialCounts = false;
+    }
     updateMaterialCountsVisibility();
+}
+
+function removeColorAndRerender(colorCode) {
+    if (!patternData || removedColorCodes.has(colorCode)) {
+        return;
+    }
+
+    const remainingColors = getAvailableBeadColors().filter(color => color.code !== colorCode);
+    if (remainingColors.length === 0) {
+        alert('至少需要保留一种颜色，无法继续取消。');
+        return;
+    }
+
+    removedColorCodes.add(colorCode);
+    generatePattern({
+        preserveRemovedColors: true,
+        preserveViewState: true,
+        sourcePixels: patternData.sourcePixels
+    });
 }
 
 function toggleMaterialCounts() {
@@ -965,6 +1085,18 @@ zoomResetBtn.addEventListener('click', function() {
 });
 
 toggleDetailsBtn.addEventListener('click', toggleMaterialCounts);
+resetRemovedColorsBtn.addEventListener('click', function() {
+    if (!patternData || removedColorCodes.size === 0) {
+        return;
+    }
+
+    removedColorCodes.clear();
+    generatePattern({
+        preserveRemovedColors: true,
+        preserveViewState: true,
+        sourcePixels: patternData.sourcePixels
+    });
+});
 
 showMaterialsBtn.addEventListener('click', function() {
     materialsDrawer.classList.add('open');
