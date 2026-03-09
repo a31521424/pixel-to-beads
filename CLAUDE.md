@@ -11,6 +11,7 @@
 - Vite作为开发服务器和构建工具
 - Canvas API用于图纸渲染（4x高分辨率）
 - localStorage用于持久化存储
+- Moaform popup用于站内意见反馈收集
 
 ## 核心架构
 
@@ -39,12 +40,43 @@ CustomColorManager {
 
 **重要规则**：
 - ✅ 只支持MARD配色（293色）
-- ✅ 颜色对象格式：`{ name: "A1", code: "A1", hex: "#FAF4C8", rgb: [250, 244, 200] }`
+- ✅ 颜色对象包含感知色差所需元数据：`{ name, code, hex, rgb, lab, chroma, lightness }`
 - ✅ `name`和`code`字段都是MARD编号（如A1、B5）
 - ✅ 自定义颜色通过localStorage永久保存
 - ❌ 不要引入Perler/Hama或其他配色方案
 
-### 2. 图纸绘制（app.js - drawPattern）
+**当前默认值**：
+- 默认颜色预设：`complete_100`
+- 默认尺寸：`52 x 52`
+- 保持比例时：上传图片后按“最短边52”自动推算另一边，最长边仍受100上限约束
+
+### 2. 图像策略系统（renderStrategies.js + app.js）
+
+**策略配置架构**：
+```javascript
+PATTERN_STRATEGIES = {
+  smart_default: { resizeMode, distanceMode, smoothing, neutralBias, coherence, despeckle },
+  cartoon: { ... },
+  portrait: { ... },
+  icon: { ... }
+}
+```
+
+**已落地策略**：
+- `smart_default`：默认通用模式，平衡统一性和层次
+- `cartoon`：偏向大色块统一和去杂点
+- `portrait`：偏向保留肤色层次与五官
+- `icon`：偏向保留硬边和像素感
+
+**量化管线**：
+1. 根据策略选择缩放方式（smooth / pixelated）
+2. 将源图像像素转换为`OKLab`
+3. 对低纹理区域做有限度平滑
+4. 使用策略距离函数匹配最近MARD颜色
+5. 应用邻域一致性修正（spatial coherence）
+6. 清理小连通域碎色（despeckle）
+
+### 3. 图纸绘制（app.js - drawPattern）
 
 **核心算法**：
 1. 获取容器尺寸（clientWidth/clientHeight）
@@ -74,15 +106,23 @@ ctx.scale(renderScale, renderScale);
 - 支持高亮相同颜色（金黄色覆盖层）
 - 支持隐藏相同颜色（灰色显示）
 
-### 3. 材料清单（app.js - generateMaterialsList）
+### 4. 材料清单（app.js - generateMaterialsList）
 
 **显示规则**：
 - 直接显示MARD code，不加数字前缀
 - 格式：`A1` 而不是 `#1 A1`
 - 按数量从多到少排序
 - 支持切换显示/隐藏数量
+- 单个颜色可执行“取消并替换”
+- 用量 `<= 9` 的颜色显示“少量”标记
+- 支持“恢复已取消颜色”
 
-### 4. 布局系统（styles.css）
+**替换规则**：
+- 不直接修改材料统计，而是基于当前图纸的`sourcePixels`重新量化
+- 替换时保留当前图像策略，只从剩余可用颜色中寻找最近色
+- 手动取消颜色属于结果态后处理，不影响用户的颜色预设配置
+
+### 5. 布局系统（styles.css）
 
 **PC端/iPad固定布局架构**：
 ```
@@ -90,7 +130,7 @@ body (height: 100vh, overflow: hidden)
 └── .container (height: 100vh, flex column)
     ├── header (flex-shrink: 0)
     └── .main-content (flex: 1, overflow: hidden, position: relative)
-        ├── .toggle-panel-btn (绝对定位切换按钮)
+        ├── .toggle-panel-btn (桌面/iPad/手机均可显示；桌面贴分割线中点)
         ├── .control-panel (width: 300px/280px, overflow-y: auto, 可收起)
         └── .result-panel (flex: 1, overflow: hidden)
             └── #patternContainer (flex: 1, display: flex, flex-direction: column)
@@ -112,7 +152,7 @@ body (min-height: 100vh, overflow-y: auto)
 ```
 
 **响应式断点**：
-- PC端：`min-width: 1024px` - 固定布局，无切换按钮
+- PC端：`min-width: 1024px` - 固定布局，控制面板可通过分割线中点把手收起
 - iPad：`768px-1023px` - 左右布局，左侧收起
 - 移动端：`max-width: 767px` - 上下布局，向上收起，坐标固定右下角
 
@@ -122,8 +162,9 @@ body (min-height: 100vh, overflow-y: auto)
 - 移动端: 无固定高度限制，允许自然流式布局
 - `flex-shrink: 0`用于不应被压缩的元素（header等）
 - 控制面板收起使用`transform`和`margin`实现
+- 桌面端收起把手位置动画需与面板过渡同步，避免“跳跃感”
 
-### 5. 悬浮材料抽屉
+### 6. 悬浮材料抽屉
 
 **行为规则**：
 - 桌面（≥1024px）：从右侧滑入，400px宽
@@ -132,7 +173,7 @@ body (min-height: 100vh, overflow-y: auto)
 - 点击遮罩层、关闭按钮或按ESC键关闭
 - 打开时禁止body滚动（`body.style.overflow = 'hidden'`）
 
-### 6. 缩放系统
+### 7. 缩放系统
 
 **缩放参数**：
 ```javascript
@@ -147,7 +188,7 @@ const maxZoom = 3.0;
 - 生成新图纸时重置为1.0
 - 缩放后重绘整个canvas
 
-### 7. 交互状态管理
+### 8. 交互状态管理
 
 **全局状态变量**：
 ```javascript
@@ -159,12 +200,26 @@ let highlightSameColor = false;  // 是否高亮相同颜色
 let hideSameColor = false;       // 是否隐藏相同颜色
 let showMaterialCounts = false;  // 是否显示材料数量
 let tempCustomColors = [];       // 临时自定义颜色选择
+let removedColorCodes = new Set();// 手动取消并替换的颜色
 ```
 
 **状态重置规则**：
 - 生成新图纸时重置：`zoomScale`, `selectedCell`, `highlightSameColor`, `hideSameColor`
+- 正常重新生成图纸时清空`removedColorCodes`
+- 结果态执行“取消并替换”时，保留`sourcePixels`并仅重跑量化
 - 打开自定义颜色选择器时：`tempCustomColors = [...customColorManager.getColors()]`
 - 取消颜色选择时恢复之前的状态
+
+### 9. 反馈入口
+
+**集成方式**：
+- 左侧控制面板底部提供“留言反馈”入口
+- 当前使用Moaform官方popup脚本
+- 链接本身仍保留`href`作为兜底跳转
+
+**注意事项**：
+- 当前弹层外观由第三方脚本控制，入口按钮样式可自定义
+- 如果后续要完全统一弹窗视觉，应改为“自定义modal + iframe”
 
 ## 常见问题与解决方案
 
@@ -217,6 +272,7 @@ requestAnimationFrame(() => {
 **解决方案**：
 - iPad: 使用`transform: translateX(-100%)`和`margin-left: -280px`
 - 移动端: 使用`max-height: 0`、`padding: 0`、`opacity: 0`
+- 桌面端：把手的`left`过渡需与panel的`transform/margin-left`使用同一easing
 - 添加`transition`确保平滑过渡
 
 ## 代码规范
@@ -238,6 +294,7 @@ requestAnimationFrame(() => {
 - `/src/app.js`：主应用逻辑、事件处理、Canvas渲染
 - `/src/colorSchemes.js`：配色方案管理类
 - `/src/colorPresets.js`：颜色预设定义和自定义管理类
+- `/src/renderStrategies.js`：图像策略定义
 - `/src/styles.css`：全局样式、响应式布局
 - `/src/mard-color.json`：MARD 293色数据
 - `/index.html`：入口页面、HTML结构
