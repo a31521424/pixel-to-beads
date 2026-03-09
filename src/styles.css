@@ -19,6 +19,18 @@
     --black: #000000;
 }
 
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     background: var(--white);
@@ -26,49 +38,21 @@ body {
     line-height: 1.6;
     margin: 0;
     padding: 0;
-}
-
-/* PC端保持100vh */
-@media (min-width: 768px) {
-    body {
-        height: 100vh;
-        overflow: hidden;
-    }
-}
-
-/* 移动端允许滚动 */
-@media (max-width: 767px) {
-    body {
-        min-height: 100vh;
-        overflow-y: auto;
-    }
+    min-height: 100vh;
+    overflow-y: auto;
 }
 
 .container {
     max-width: 100%;
     display: flex;
     flex-direction: column;
-}
-
-/* PC端和iPad固定高度 */
-@media (min-width: 768px) {
-    .container {
-        height: 100vh;
-        overflow: hidden;
-    }
-}
-
-/* 移动端流式布局 */
-@media (max-width: 767px) {
-    .container {
-        min-height: 100vh;
-    }
+    min-height: 100vh;
 }
 
 header {
     background: var(--white);
     border-bottom: 1px solid var(--gray-200);
-    padding: 16px 24px;
+    padding: 10px 24px;
     flex-shrink: 0;
 }
 
@@ -81,19 +65,28 @@ header {
 
 .header-text {
     flex: 1;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    min-width: 0;
+    flex-wrap: wrap;
 }
 
 header h1 {
     font-size: 1.25em;
     font-weight: 600;
     color: var(--gray-900);
-    margin-bottom: 2px;
+    margin-bottom: 0;
+    line-height: 1.2;
 }
 
 .subtitle {
     font-size: 0.8em;
     color: var(--gray-500);
     font-weight: 400;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .header-info {
@@ -140,24 +133,27 @@ header h1 {
     }
 }
 
+.noscript-note {
+    margin: 16px 24px 0;
+    padding: 12px 14px;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    background: var(--gray-50);
+    color: var(--gray-600);
+    font-size: 0.85em;
+}
+
 .main-content {
     display: flex;
     position: relative;
-}
-
-/* PC端和iPad固定布局 */
-@media (min-width: 768px) {
-    .main-content {
-        flex: 1;
-        overflow: hidden;
-        min-height: 0;
-    }
+    min-height: calc(100vh - 62px);
 }
 
 /* 移动端流式布局 */
 @media (max-width: 767px) {
     .main-content {
         flex-direction: column;
+        min-height: auto;
     }
 }
 
@@ -251,6 +247,165 @@ header h1 {
     transform: scale(0.98);
 }
 
+.seo-content {
+    padding: 24px 24px 40px;
+    background: var(--gray-50);
+    border: 0;
+    border-top: 1px solid var(--gray-200);
+    border-radius: 0;
+}
+
+.seo-intro-card,
+.seo-card {
+    border: 1px solid var(--gray-200);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 10px 30px rgba(23, 23, 23, 0.04);
+}
+
+.seo-intro-card {
+    padding: 20px 22px;
+    margin-bottom: 16px;
+}
+
+.seo-intro-card h2,
+.seo-card h2 {
+    font-size: 1.15rem;
+    line-height: 1.35;
+    color: var(--gray-900);
+    margin-bottom: 10px;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.seo-intro-card p,
+.seo-card p,
+.faq-list p {
+    color: var(--gray-600);
+    font-size: 0.95rem;
+}
+
+.seo-chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.seo-chip-list span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 34px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: var(--gray-100);
+    color: var(--gray-700);
+    font-size: 0.82rem;
+    font-weight: 500;
+}
+
+.tool-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.tool-facts div {
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+}
+
+.tool-facts dt {
+    font-size: 0.75rem;
+    color: var(--gray-500);
+    margin-bottom: 4px;
+}
+
+.tool-facts dd {
+    color: var(--gray-800);
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.seo-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+}
+
+.seo-card {
+    padding: 20px 22px;
+}
+
+.seo-card-wide {
+    margin-top: 16px;
+}
+
+.seo-list {
+    list-style: none;
+    display: grid;
+    gap: 12px;
+}
+
+.seo-list-numbered {
+    counter-reset: seo-step;
+}
+
+.seo-list-numbered li {
+    position: relative;
+    padding-left: 44px;
+}
+
+.seo-list-numbered li::before {
+    counter-increment: seo-step;
+    content: counter(seo-step);
+    position: absolute;
+    left: 0;
+    top: 1px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--gray-900);
+    color: var(--white);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.seo-list li {
+    color: var(--gray-600);
+    font-size: 0.94rem;
+}
+
+.seo-list strong,
+.faq-list h3 {
+    color: var(--gray-900);
+}
+
+.faq-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+}
+
+.faq-list article {
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+}
+
+.faq-list h3 {
+    font-size: 1rem;
+    line-height: 1.4;
+    margin-bottom: 8px;
+}
+
 .control-panel.collapsed {
     transform: translateX(-100%);
     margin-left: -300px;
@@ -281,6 +436,13 @@ section h2 {
     cursor: pointer;
     transition: all 0.2s;
     background: var(--gray-50);
+}
+
+.upload-hint {
+    margin-top: 8px;
+    font-size: 0.75em;
+    color: var(--gray-500);
+    line-height: 1.5;
 }
 
 .upload-area:hover {
@@ -1303,12 +1465,21 @@ section h2 {
         padding: 16px 16px;
     }
 
+    .header-text {
+        display: block;
+    }
+
     header h1 {
         font-size: 1.25em;
     }
 
     .subtitle {
         font-size: 0.8125em;
+        white-space: normal;
+    }
+
+    .noscript-note {
+        margin: 16px 16px 0;
     }
 
     .control-panel {
@@ -1443,6 +1614,21 @@ section h2 {
         width: 24px;
         height: 24px;
     }
+
+    .seo-content {
+        padding: 24px 16px 36px;
+    }
+
+    .seo-intro-card,
+    .seo-card {
+        padding: 18px;
+    }
+
+    .seo-grid,
+    .faq-list,
+    .tool-facts {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* 超小屏幕 */
@@ -1454,6 +1640,14 @@ section h2 {
 
     .material-item {
         flex: 1 1 100%;
+    }
+}
+
+@media (max-width: 900px) {
+    .seo-grid,
+    .faq-list,
+    .tool-facts {
+        grid-template-columns: 1fr;
     }
 }
 
