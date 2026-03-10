@@ -798,6 +798,16 @@ section h2 {
     flex-wrap: wrap;
 }
 
+.pattern-controls label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 34px;
+    color: var(--gray-600);
+    font-size: 0.8em;
+    white-space: nowrap;
+}
+
 @media (min-width: 768px) {
     .coordinate-info {
         position: absolute;
@@ -813,6 +823,11 @@ section h2 {
 
     .coordinate-info.is-visible {
         transform: translate(-50%, -50%);
+    }
+
+    .pattern-controls {
+        flex: 1;
+        justify-content: flex-end;
     }
 }
 
@@ -1047,6 +1062,12 @@ section h2 {
     line-height: 1.5;
 }
 
+.edit-toolbar-main .btn-secondary,
+.edit-toolbar-main .btn-secondary-small,
+.replace-color-trigger {
+    min-height: 40px;
+}
+
 .zoom-controls {
     display: flex;
     align-items: center;
@@ -1094,13 +1115,15 @@ section h2 {
 }
 
 .pattern-controls label {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 6px;
+    min-height: 34px;
     font-size: 0.8em;
     color: var(--gray-600);
     cursor: pointer;
     user-select: none;
+    white-space: nowrap;
 }
 
 .pattern-controls input[type="checkbox"] {
@@ -1698,8 +1721,70 @@ section h2 {
         flex: 1;
     }
 
+    .pattern-header {
+        padding: 14px 16px;
+    }
+
+    .pattern-header-top {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+        gap: 10px 12px;
+    }
+
+    .pattern-header-top h2 {
+        grid-column: 1;
+        align-self: center;
+    }
+
+    .coordinate-info {
+        position: static;
+        left: auto;
+        top: auto;
+        width: auto;
+        max-width: min(320px, 42vw);
+        min-height: 42px;
+        justify-content: flex-start;
+        transform: none;
+        margin-left: auto;
+    }
+
+    .coordinate-info.is-visible {
+        transform: none;
+    }
+
     .pattern-controls {
+        grid-column: 1 / -1;
         gap: 10px;
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .pattern-edit-toolbar {
+        padding-top: 10px;
+    }
+
+    .edit-toolbar-main {
+        gap: 10px;
+        align-items: stretch;
+    }
+
+    .edit-replace-group {
+        flex: 1 1 100%;
+    }
+
+    .edit-actions-group {
+        width: 100%;
+    }
+
+    .replace-color-picker {
+        flex: 1;
+        min-width: 180px;
+    }
+
+    .edit-actions-group .btn-secondary {
+        flex: 1 1 calc(25% - 8px);
+        min-width: 96px;
     }
 
     .zoom-controls {
@@ -1811,11 +1896,11 @@ section h2 {
 
     .coordinate-info {
         position: fixed;
-        bottom: 20px;
-        right: 20px;
+        bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+        right: 12px;
         left: auto;
         width: auto;
-        max-width: calc(100vw - 40px);
+        max-width: calc(100vw - 24px);
         order: unset;
         font-size: 0.75em;
         padding: 8px 12px;
@@ -1835,6 +1920,7 @@ section h2 {
         font-size: 0.75em;
         width: 100%;
         flex-wrap: wrap;
+        justify-content: flex-start;
     }
 
     .pattern-edit-toolbar {
@@ -1862,14 +1948,19 @@ section h2 {
 
     .edit-replace-group .btn-secondary,
     .edit-actions-group .btn-secondary {
-        flex: 1;
-        min-width: 110px;
+        flex: 1 1 calc(50% - 4px);
+        min-width: 120px;
     }
 
     .zoom-controls {
         order: -1;
         width: 100%;
         justify-content: center;
+    }
+
+    .pattern-controls label {
+        min-height: 32px;
+        font-size: 0.78em;
     }
 
     .pattern-controls .btn-secondary {
