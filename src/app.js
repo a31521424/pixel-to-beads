@@ -68,6 +68,22 @@ const coordinateSwatch = document.getElementById('coordinateSwatch');
 const coordinateColorName = document.getElementById('coordinateColorName');
 const highlightSameColorBtn = document.getElementById('highlightSameColorBtn');
 const hideSameColorBtn = document.getElementById('hideSameColorBtn');
+const replaceColorPicker = document.getElementById('replaceColorPicker');
+const replaceColorTrigger = document.getElementById('replaceColorTrigger');
+const replaceColorSwatch = document.getElementById('replaceColorSwatch');
+const replaceColorCode = document.getElementById('replaceColorCode');
+const replaceColorHex = document.getElementById('replaceColorHex');
+const replaceColorPanel = document.getElementById('replaceColorPanel');
+const replaceColorSearch = document.getElementById('replaceColorSearch');
+const clearReplaceColorSearchBtn = document.getElementById('clearReplaceColorSearchBtn');
+const replaceColorList = document.getElementById('replaceColorList');
+const replaceSelectionBtn = document.getElementById('replaceSelectionBtn');
+const fillRegionBtn = document.getElementById('fillRegionBtn');
+const selectSameColorBtn = document.getElementById('selectSameColorBtn');
+const clearSelectionBtn = document.getElementById('clearSelectionBtn');
+const undoEditBtn = document.getElementById('undoEditBtn');
+const resetEditsBtn = document.getElementById('resetEditsBtn');
+const patternCanvasWrapper = document.querySelector('.pattern-canvas-wrapper');
 
 const customColorPicker = document.getElementById('customColorPicker');
 const colorGrid = document.getElementById('colorGrid');
@@ -93,6 +109,13 @@ let hideSameColor = false; // 是否隐藏相同颜色
 let previousPreset = 'complete_100'; // 记录打开自定义选择器前的预设
 let currentPatternStrategyId = DEFAULT_PATTERN_STRATEGY;
 let removedColorCodes = new Set();
+let selectedCells = new Set();
+let selectionDrag = null;
+let pointerSelectionState = null;
+let manualEditHistory = [];
+let originalPatternPixels = [];
+const MAX_EDIT_HISTORY = 30;
+let selectedReplacementColorCode = '';
 
 function announceStatus(message) {
     if (generationStatus) {
@@ -133,6 +156,8 @@ async function initialize() {
     console.log('拼豆图纸工具已加载 - MARD配色方案');
     console.log(`当前可用颜色数量: ${colorSchemeManager.getCurrentColors().length}`);
     updatePatternStrategyDescription();
+    updateReplaceColorOptions();
+    updateEditSelectionSummary();
     announceStatus('工具已就绪，请上传图片并生成拼豆图纸。');
 
     // 初始化控制面板切换按钮状态
@@ -164,6 +189,252 @@ function getCurrentPatternStrategy() {
 function updatePatternStrategyDescription() {
     const strategy = getCurrentPatternStrategy();
     strategyDescription.textContent = strategy.description;
+}
+
+function getCellIndex(x, y, width = patternData?.width) {
+    if (!Number.isInteger(x) || !Number.isInteger(y) || !width) {
+        return -1;
+    }
+
+    return y * width + x;
+}
+
+function getCellFromIndex(index, width = patternData?.width) {
+    if (!width || index < 0) {
+        return null;
+    }
+
+    return {
+        x: index % width,
+        y: Math.floor(index / width)
+    };
+}
+
+function clonePixelArray(pixels) {
+    return pixels ? [...pixels] : [];
+}
+
+function syncPatternMetadata(data = patternData) {
+    if (!data) {
+        return;
+    }
+
+    data.palette = collectUsedPalette(data.pixels);
+    data.removedColorCodes = Array.from(removedColorCodes);
+}
+
+function setReplacementColor(code) {
+    const color = getReplacementColor(code);
+
+    if (!color) {
+        selectedReplacementColorCode = '';
+        replaceColorSwatch.style.background = 'linear-gradient(135deg, #ffffff 0%, #e5e5e5 100%)';
+        replaceColorCode.textContent = '--';
+        replaceColorHex.textContent = '请选择颜色';
+        updateEditActionsState();
+        return;
+    }
+
+    selectedReplacementColorCode = color.code;
+    replaceColorSwatch.style.background = color.hex;
+    replaceColorCode.textContent = color.code;
+    replaceColorHex.textContent = color.hex.toUpperCase();
+    updateEditActionsState();
+}
+
+function getPatternColorUsageMap() {
+    const usageMap = new Map();
+    if (!patternData) {
+        return usageMap;
+    }
+
+    patternData.pixels.forEach(color => {
+        usageMap.set(color.code, (usageMap.get(color.code) || 0) + 1);
+    });
+
+    return usageMap;
+}
+
+function renderReplaceColorList() {
+    const availableColors = getAvailableBeadColors();
+    const keyword = replaceColorSearch.value.trim().toLowerCase();
+    const usageMap = getPatternColorUsageMap();
+
+    const filteredColors = availableColors
+        .slice()
+        .sort((a, b) => {
+            const usageDiff = (usageMap.get(b.code) || 0) - (usageMap.get(a.code) || 0);
+            if (usageDiff !== 0) {
+                return usageDiff;
+            }
+            return a.code.localeCompare(b.code, 'en');
+        })
+        .filter(color => {
+            if (!keyword) {
+                return true;
+            }
+
+            return color.code.toLowerCase().includes(keyword) || color.hex.toLowerCase().includes(keyword);
+        });
+
+    replaceColorList.innerHTML = '';
+
+    if (filteredColors.length === 0) {
+        const emptyState = document.createElement('div');
+        emptyState.className = 'replace-color-empty';
+        emptyState.textContent = '没有匹配的颜色';
+        replaceColorList.appendChild(emptyState);
+        return;
+    }
+
+    filteredColors.forEach(color => {
+        const usageCount = usageMap.get(color.code) || 0;
+        const option = document.createElement('button');
+        option.type = 'button';
+        option.className = 'replace-color-option';
+        if (color.code === selectedReplacementColorCode) {
+            option.classList.add('active');
+        }
+
+        option.innerHTML = `
+            <span class="replace-color-swatch" style="background:${color.hex}"></span>
+            <span class="replace-color-option-meta">
+                <span class="replace-color-option-line">
+                    <span class="replace-color-option-code">${color.code}</span>
+                    <span class="replace-color-option-hex">${color.hex.toUpperCase()}</span>
+                    ${usageCount > 0 ? '<span class="replace-color-option-badge">图中已用</span>' : ''}
+                </span>
+                <span class="replace-color-option-usage">${usageCount > 0 ? `当前图纸 ${usageCount} 颗` : '当前图纸未使用'}</span>
+            </span>
+        `;
+
+        option.addEventListener('click', function() {
+            setReplacementColor(color.code);
+            closeReplaceColorPanel();
+        });
+
+        replaceColorList.appendChild(option);
+    });
+}
+
+function openReplaceColorPanel() {
+    replaceColorPanel.hidden = false;
+    replaceColorTrigger.setAttribute('aria-expanded', 'true');
+    renderReplaceColorList();
+    requestAnimationFrame(() => {
+        replaceColorSearch.focus();
+        replaceColorSearch.select();
+    });
+}
+
+function closeReplaceColorPanel() {
+    replaceColorPanel.hidden = true;
+    replaceColorTrigger.setAttribute('aria-expanded', 'false');
+}
+
+function updateReplaceColorOptions() {
+    const availableColors = getAvailableBeadColors();
+
+    if (availableColors.length === 0) {
+        setReplacementColor('');
+        replaceColorTrigger.disabled = true;
+        closeReplaceColorPanel();
+        renderReplaceColorList();
+        return;
+    }
+
+    replaceColorTrigger.disabled = false;
+    const nextCode = availableColors.some(color => color.code === selectedReplacementColorCode)
+        ? selectedReplacementColorCode
+        : availableColors[0].code;
+    setReplacementColor(nextCode);
+    renderReplaceColorList();
+}
+
+function updateEditActionsState() {
+    const hasPattern = Boolean(patternData);
+    const selectionCount = selectedCells.size;
+    const hasSelection = selectionCount > 0;
+    const hasPrimaryCell = Boolean(selectedCell);
+    const hasHistory = manualEditHistory.length > 0;
+
+    replaceSelectionBtn.disabled = !hasPattern || !hasSelection || !selectedReplacementColorCode;
+    fillRegionBtn.disabled = !hasPattern || !hasPrimaryCell || !selectedReplacementColorCode;
+    selectSameColorBtn.disabled = !hasPattern || !hasPrimaryCell;
+    clearSelectionBtn.disabled = !hasSelection;
+    undoEditBtn.disabled = !hasHistory;
+    resetEditsBtn.disabled = !hasHistory;
+}
+
+function updateEditSelectionSummary() {
+    updateEditActionsState();
+}
+
+function resetColorAssistModes() {
+    highlightSameColor = false;
+    hideSameColor = false;
+    highlightSameColorBtn.classList.remove('active');
+    hideSameColorBtn.classList.remove('active');
+}
+
+function clearSelectionState({ redraw = true } = {}) {
+    selectedCell = null;
+    selectedCells.clear();
+    selectionDrag = null;
+    pointerSelectionState = null;
+    patternCanvas.classList.remove('selection-mode');
+    coordinateInfo.classList.remove('is-visible');
+    coordinateInfo.setAttribute('aria-hidden', 'true');
+    resetColorAssistModes();
+    updateEditSelectionSummary();
+
+    if (redraw && patternData) {
+        requestAnimationFrame(() => {
+            drawPattern(patternData, patternData.width, patternData.height);
+        });
+    }
+}
+
+function resetManualEditHistory() {
+    manualEditHistory = [];
+    originalPatternPixels = patternData ? clonePixelArray(patternData.pixels) : [];
+    updateEditActionsState();
+}
+
+function pushEditHistorySnapshot() {
+    if (!patternData) {
+        return;
+    }
+
+    manualEditHistory.push(clonePixelArray(patternData.pixels));
+    if (manualEditHistory.length > MAX_EDIT_HISTORY) {
+        manualEditHistory.shift();
+    }
+    updateEditActionsState();
+}
+
+function refreshPatternAfterManualEdit({ preserveCounts = true, announceMessage } = {}) {
+    if (!patternData) {
+        return;
+    }
+
+    syncPatternMetadata(patternData);
+    generateMaterialsList(patternData, { preserveCounts });
+    updateReplaceColorOptions();
+    updateCoordinateInfo({ announce: false });
+    updateEditSelectionSummary();
+
+    requestAnimationFrame(() => {
+        drawPattern(patternData, patternData.width, patternData.height);
+    });
+
+    if (announceMessage) {
+        announceStatus(announceMessage);
+    }
+}
+
+function getReplacementColor(code) {
+    return getAvailableBeadColors().find(color => color.code === code) || null;
 }
 
 function regeneratePatternIfPossible() {
@@ -313,23 +584,26 @@ function generatePattern(options = {}) {
 
     patternData = quantizeColors(nextSourcePixels, width, height, strategy, availableBeadColors);
     generateMaterialsList(patternData, { preserveCounts: preserveViewState });
+    updateReplaceColorOptions();
 
     // 重置缩放和选中
     if (preserveViewState) {
-        selectedCell = previousSelectedCell;
-        if (selectedCell) {
+        if (previousSelectedCell) {
+            selectedCell = previousSelectedCell;
+            selectedCells = new Set([getCellIndex(previousSelectedCell.x, previousSelectedCell.y, width)]);
             updateCoordinateInfo();
+        } else {
+            selectedCell = null;
+            selectedCells.clear();
+            updateEditSelectionSummary();
         }
     } else {
         zoomScale = 1.0;
-        selectedCell = null;
-        highlightSameColor = false;
-        hideSameColor = false;
-        coordinateInfo.style.display = 'none';
-        highlightSameColorBtn.classList.remove('active');
-        hideSameColorBtn.classList.remove('active');
+        clearSelectionState({ redraw: false });
         updateZoomLevel();
     }
+
+    resetManualEditHistory();
 
     resultArea.style.display = 'none';
     patternContainer.style.display = 'flex';
@@ -745,37 +1019,50 @@ function despeckleRegions(sourcePixels, pixels, width, height, strategy) {
     return nextPixels;
 }
 
-function drawPattern(data, width, height) {
+function getPatternRenderMetrics(width, height) {
     const container = document.querySelector('.pattern-canvas-wrapper');
-    const containerWidth = container.clientWidth - 16;
-    const containerHeight = container.clientHeight - 16;
-
+    const containerWidth = Math.max(0, container.clientWidth - 16);
+    const containerHeight = Math.max(0, container.clientHeight - 16);
     const maxCellSize = 60;
     const minCellSize = 8;
-
     const showGrid = showGridCheckbox.checked;
     const showNumbers = showNumbersCheckbox.checked;
-
-    // 为行列编号预留空间（只在显示网格时需要）
     const labelSize = showGrid ? 24 : 0;
-
     const cellSizeByWidth = (containerWidth - labelSize) / width;
     const cellSizeByHeight = (containerHeight - labelSize) / height;
     const idealCellSize = Math.min(cellSizeByWidth, cellSizeByHeight);
-
     const baseCellSize = Math.max(minCellSize, Math.min(maxCellSize, idealCellSize));
-
-    // 应用缩放比例
     const cellSize = baseCellSize * zoomScale;
-
-    // 显示尺寸
     const displayWidth = width * cellSize + labelSize;
     const displayHeight = height * cellSize + labelSize;
-
-    // 渲染倍数：实际渲染更高分辨率，然后缩小显示
     const renderScale = 4;
-    const canvasWidth = displayWidth * renderScale;
-    const canvasHeight = displayHeight * renderScale;
+
+    return {
+        container,
+        showGrid,
+        showNumbers,
+        labelSize,
+        cellSize,
+        displayWidth,
+        displayHeight,
+        renderScale,
+        canvasWidth: displayWidth * renderScale,
+        canvasHeight: displayHeight * renderScale
+    };
+}
+
+function drawPattern(data, width, height) {
+    const {
+        showGrid,
+        showNumbers,
+        labelSize,
+        cellSize,
+        displayWidth,
+        displayHeight,
+        renderScale,
+        canvasWidth,
+        canvasHeight
+    } = getPatternRenderMetrics(width, height);
 
     patternCanvas.width = canvasWidth;
     patternCanvas.height = canvasHeight;
@@ -913,7 +1200,30 @@ function drawPattern(data, width, height) {
         ctx.strokeRect(labelSize, labelSize, width * cellSize, height * cellSize);
     }
 
-    // 高亮选中的格子
+    if (selectedCells.size > 0) {
+        selectedCells.forEach(index => {
+            const cell = getCellFromIndex(index, width);
+            if (!cell) {
+                return;
+            }
+
+            const isPrimaryCell = selectedCell && cell.x === selectedCell.x && cell.y === selectedCell.y;
+            if (isPrimaryCell) {
+                return;
+            }
+
+            const drawX = labelSize + cell.x * cellSize;
+            const drawY = labelSize + cell.y * cellSize;
+
+            ctx.fillStyle = 'rgba(37, 99, 235, 0.18)';
+            ctx.fillRect(drawX, drawY, cellSize, cellSize);
+            ctx.strokeStyle = 'rgba(37, 99, 235, 0.95)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(drawX, drawY, cellSize, cellSize);
+        });
+    }
+
+    // 高亮主选中的格子
     if (selectedCell && selectedCell.x >= 0 && selectedCell.x < width &&
         selectedCell.y >= 0 && selectedCell.y < height) {
         const drawX = labelSize + selectedCell.x * cellSize;
@@ -927,6 +1237,26 @@ function drawPattern(data, width, height) {
         // 绘制半透明覆盖层
         ctx.fillStyle = 'rgba(255, 107, 0, 0.2)';
         ctx.fillRect(drawX, drawY, cellSize, cellSize);
+    }
+
+    if (selectionDrag) {
+        const startX = Math.min(selectionDrag.startX, selectionDrag.endX);
+        const endX = Math.max(selectionDrag.startX, selectionDrag.endX);
+        const startY = Math.min(selectionDrag.startY, selectionDrag.endY);
+        const endY = Math.max(selectionDrag.startY, selectionDrag.endY);
+        const drawX = labelSize + startX * cellSize;
+        const drawY = labelSize + startY * cellSize;
+        const selectionWidth = (endX - startX + 1) * cellSize;
+        const selectionHeight = (endY - startY + 1) * cellSize;
+
+        ctx.save();
+        ctx.setLineDash([6, 4]);
+        ctx.strokeStyle = '#2563EB';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(drawX, drawY, selectionWidth, selectionHeight);
+        ctx.fillStyle = 'rgba(37, 99, 235, 0.08)';
+        ctx.fillRect(drawX, drawY, selectionWidth, selectionHeight);
+        ctx.restore();
     }
 }
 
@@ -952,11 +1282,13 @@ function updateMaterialActionState() {
     if (removedColorCodes.size > 0) {
         resetRemovedColorsBtn.style.display = 'inline-flex';
         materialsHint.textContent = `已取消 ${removedColorCodes.size} 种颜色。你也可以继续取消其他少量用色，系统会按当前策略自动替换为最近色。`;
+        updateReplaceColorOptions();
         return;
     }
 
     resetRemovedColorsBtn.style.display = 'none';
     materialsHint.textContent = '可在这里查看用量较少的色豆，并手动取消后自动替换为最近色。';
+    updateReplaceColorOptions();
 }
 
 function generateMaterialsList(data, options = {}) {
@@ -1019,6 +1351,7 @@ function generateMaterialsList(data, options = {}) {
         showMaterialCounts = false;
     }
     updateMaterialCountsVisibility();
+    updateEditActionsState();
 }
 
 function removeColorAndRerender(colorCode) {
@@ -1139,75 +1472,385 @@ function closeDrawer() {
 closeDrawerBtn.addEventListener('click', closeDrawer);
 drawerOverlay.addEventListener('click', closeDrawer);
 
-// Canvas点击事件 - 选中格子
-patternCanvas.addEventListener('click', function(e) {
-    if (!patternData) return;
+function getGridCoordinatesFromPointerEvent(event) {
+    if (!patternData) {
+        return null;
+    }
 
     const rect = patternCanvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) {
+        return null;
+    }
+
     const scaleX = patternCanvas.width / rect.width;
     const scaleY = patternCanvas.height / rect.height;
+    const pointerX = (event.clientX - rect.left) * scaleX;
+    const pointerY = (event.clientY - rect.top) * scaleY;
+    const metrics = getPatternRenderMetrics(patternData.width, patternData.height);
+    const scaledLabelSize = metrics.labelSize * metrics.renderScale;
+    const scaledCellSize = metrics.cellSize * metrics.renderScale;
+    const gridX = Math.floor((pointerX - scaledLabelSize) / scaledCellSize);
+    const gridY = Math.floor((pointerY - scaledLabelSize) / scaledCellSize);
 
-    // 获取点击位置（考虑renderScale）
-    const clickX = (e.clientX - rect.left) * scaleX;
-    const clickY = (e.clientY - rect.top) * scaleY;
-
-    // 获取当前绘图参数（需要与drawPattern保持一致）
-    const container = document.querySelector('.pattern-canvas-wrapper');
-    const containerWidth = container.clientWidth - 16;
-    const containerHeight = container.clientHeight - 16;
-    const maxCellSize = 60;
-    const minCellSize = 8;
-    const showGrid = showGridCheckbox.checked;
-    const labelSize = showGrid ? 24 : 0;
-
-    const width = patternData.width;
-    const height = patternData.height;
-
-    const cellSizeByWidth = (containerWidth - labelSize) / width;
-    const cellSizeByHeight = (containerHeight - labelSize) / height;
-    const idealCellSize = Math.min(cellSizeByWidth, cellSizeByHeight);
-    const baseCellSize = Math.max(minCellSize, Math.min(maxCellSize, idealCellSize));
-    const cellSize = baseCellSize * zoomScale;
-
-    const renderScale = 4;
-    const scaledLabelSize = labelSize * renderScale;
-    const scaledCellSize = cellSize * renderScale;
-
-    // 计算格子坐标
-    const gridX = Math.floor((clickX - scaledLabelSize) / scaledCellSize);
-    const gridY = Math.floor((clickY - scaledLabelSize) / scaledCellSize);
-
-    // 检查是否在有效范围内
-    if (gridX >= 0 && gridX < width && gridY >= 0 && gridY < height) {
-        selectedCell = { x: gridX, y: gridY };
-        updateCoordinateInfo();
-
-        // 使用requestAnimationFrame确保DOM先渲染
-        requestAnimationFrame(() => {
-            drawPattern(patternData, width, height);
-        });
+    if (gridX < 0 || gridX >= patternData.width || gridY < 0 || gridY >= patternData.height) {
+        return null;
     }
-});
 
-// 更新坐标信息显示
-function updateCoordinateInfo() {
-    if (!selectedCell || !patternData) {
-        coordinateInfo.style.display = 'none';
+    return { x: gridX, y: gridY };
+}
+
+function setPrimarySelection(x, y, { append = false, announce = true } = {}) {
+    if (!patternData) {
         return;
     }
 
-    const colLabel = getColumnLabel(selectedCell.x);
-    const rowLabel = selectedCell.y + 1;
-    const coordinate = `${colLabel}${rowLabel}`;
+    const index = getCellIndex(x, y, patternData.width);
+    if (index < 0) {
+        return;
+    }
 
-    const index = selectedCell.y * patternData.width + selectedCell.x;
-    const color = patternData.pixels[index];
+    if (!append) {
+        selectedCells.clear();
+    }
 
-    currentCoordinate.textContent = coordinate;
-    coordinateSwatch.style.backgroundColor = color.hex;
-    coordinateColorName.textContent = color.name;
-    coordinateInfo.style.display = 'flex';
-    announceStatus(`当前选中坐标 ${coordinate}，颜色 ${color.name}。`);
+    selectedCells.add(index);
+    selectedCell = { x, y };
+    if (selectedCells.size > 1) {
+        resetColorAssistModes();
+    }
+    updateCoordinateInfo({ announce });
+    updateEditSelectionSummary();
+
+    requestAnimationFrame(() => {
+        drawPattern(patternData, patternData.width, patternData.height);
+    });
+}
+
+function applySelectionDrag({ append = false, announce = true } = {}) {
+    if (!patternData || !selectionDrag) {
+        return;
+    }
+
+    const startX = Math.min(selectionDrag.startX, selectionDrag.endX);
+    const endX = Math.max(selectionDrag.startX, selectionDrag.endX);
+    const startY = Math.min(selectionDrag.startY, selectionDrag.endY);
+    const endY = Math.max(selectionDrag.startY, selectionDrag.endY);
+    const nextSelection = append ? new Set(selectedCells) : new Set();
+
+    for (let y = startY; y <= endY; y++) {
+        for (let x = startX; x <= endX; x++) {
+            nextSelection.add(getCellIndex(x, y, patternData.width));
+        }
+    }
+
+    selectedCells = nextSelection;
+    selectedCell = { x: selectionDrag.endX, y: selectionDrag.endY };
+    resetColorAssistModes();
+    updateCoordinateInfo({ announce });
+    updateEditSelectionSummary();
+}
+
+function collectConnectedIndexes(startIndex, targetCode) {
+    if (!patternData) {
+        return [];
+    }
+
+    const width = patternData.width;
+    const height = patternData.height;
+    const visited = new Set([startIndex]);
+    const stack = [startIndex];
+    const region = [];
+
+    while (stack.length > 0) {
+        const currentIndex = stack.pop();
+        region.push(currentIndex);
+        const { x, y } = getCellFromIndex(currentIndex, width);
+        const neighbors = [
+            [x - 1, y],
+            [x + 1, y],
+            [x, y - 1],
+            [x, y + 1]
+        ];
+
+        neighbors.forEach(([nextX, nextY]) => {
+            if (nextX < 0 || nextX >= width || nextY < 0 || nextY >= height) {
+                return;
+            }
+
+            const nextIndex = getCellIndex(nextX, nextY, width);
+            if (visited.has(nextIndex) || patternData.pixels[nextIndex]?.code !== targetCode) {
+                return;
+            }
+
+            visited.add(nextIndex);
+            stack.push(nextIndex);
+        });
+    }
+
+    return region;
+}
+
+function applyColorToSelection() {
+    if (!patternData || selectedCells.size === 0) {
+        return;
+    }
+
+    const replacementColor = getReplacementColor(selectedReplacementColorCode);
+    if (!replacementColor) {
+        return;
+    }
+
+    pushEditHistorySnapshot();
+
+    let changedCount = 0;
+    selectedCells.forEach(index => {
+        if (patternData.pixels[index]?.code === replacementColor.code) {
+            return;
+        }
+
+        patternData.pixels[index] = replacementColor;
+        changedCount += 1;
+    });
+
+    if (changedCount === 0) {
+        manualEditHistory.pop();
+        updateEditActionsState();
+        announceStatus(`选中的珠子已经是 ${replacementColor.code}。`);
+        return;
+    }
+
+    refreshPatternAfterManualEdit({
+        announceMessage: `已将 ${changedCount} 颗珠子替换为 ${replacementColor.code}。`
+    });
+}
+
+function fillConnectedRegionFromSelection() {
+    if (!patternData || !selectedCell) {
+        return;
+    }
+
+    const replacementColor = getReplacementColor(selectedReplacementColorCode);
+    if (!replacementColor) {
+        return;
+    }
+
+    const startIndex = getCellIndex(selectedCell.x, selectedCell.y, patternData.width);
+    const sourceColor = patternData.pixels[startIndex];
+    if (!sourceColor || sourceColor.code === replacementColor.code) {
+        announceStatus(`当前连通区域已经是 ${replacementColor.code}。`);
+        return;
+    }
+
+    const connectedIndexes = collectConnectedIndexes(startIndex, sourceColor.code);
+    if (connectedIndexes.length === 0) {
+        return;
+    }
+
+    pushEditHistorySnapshot();
+    connectedIndexes.forEach(index => {
+        patternData.pixels[index] = replacementColor;
+    });
+
+    selectedCells = new Set(connectedIndexes);
+    refreshPatternAfterManualEdit({
+        announceMessage: `已将 ${connectedIndexes.length} 颗连通珠子替换为 ${replacementColor.code}。`
+    });
+}
+
+function selectAllSameColor() {
+    if (!patternData || !selectedCell) {
+        return;
+    }
+
+    const targetIndex = getCellIndex(selectedCell.x, selectedCell.y, patternData.width);
+    const targetColor = patternData.pixels[targetIndex];
+    if (!targetColor) {
+        return;
+    }
+
+    selectedCells = new Set();
+    patternData.pixels.forEach((color, index) => {
+        if (color.code === targetColor.code) {
+            selectedCells.add(index);
+        }
+    });
+
+    resetColorAssistModes();
+    updateCoordinateInfo({ announce: false });
+    updateEditSelectionSummary();
+    requestAnimationFrame(() => {
+        drawPattern(patternData, patternData.width, patternData.height);
+    });
+    announceStatus(`已选中全部 ${selectedCells.size} 颗 ${targetColor.code}。`);
+}
+
+function undoLastManualEdit() {
+    if (!patternData || manualEditHistory.length === 0) {
+        return;
+    }
+
+    patternData.pixels = manualEditHistory.pop();
+    refreshPatternAfterManualEdit({
+        announceMessage: '已撤销上一步手动编辑。'
+    });
+}
+
+function resetManualEdits() {
+    if (!patternData || manualEditHistory.length === 0) {
+        return;
+    }
+
+    patternData.pixels = clonePixelArray(originalPatternPixels);
+    manualEditHistory = [];
+    refreshPatternAfterManualEdit({
+        announceMessage: '已恢复到本轮生成后的初始图纸。'
+    });
+}
+
+function handleCanvasPointerDown(event) {
+    if (!patternData) {
+        return;
+    }
+
+    const cell = getGridCoordinatesFromPointerEvent(event);
+    if (!cell) {
+        return;
+    }
+
+    const appendSelection = event.ctrlKey || event.metaKey;
+
+    if (event.shiftKey) {
+        pointerSelectionState = {
+            pointerId: event.pointerId,
+            append: appendSelection,
+            isBoxSelection: true
+        };
+        selectionDrag = {
+            startX: cell.x,
+            startY: cell.y,
+            endX: cell.x,
+            endY: cell.y
+        };
+        patternCanvas.classList.add('selection-mode');
+        patternCanvas.setPointerCapture?.(event.pointerId);
+        requestAnimationFrame(() => {
+            drawPattern(patternData, patternData.width, patternData.height);
+        });
+        return;
+    }
+
+    patternCanvas.classList.remove('selection-mode');
+    selectionDrag = null;
+    pointerSelectionState = null;
+    setPrimarySelection(cell.x, cell.y, { append: appendSelection });
+}
+
+function handleCanvasPointerMove(event) {
+    if (!patternData || !pointerSelectionState?.isBoxSelection || !selectionDrag) {
+        return;
+    }
+
+    const cell = getGridCoordinatesFromPointerEvent(event);
+    if (!cell) {
+        return;
+    }
+
+    selectionDrag.endX = cell.x;
+    selectionDrag.endY = cell.y;
+    requestAnimationFrame(() => {
+        drawPattern(patternData, patternData.width, patternData.height);
+    });
+}
+
+function finishCanvasPointerSelection(event) {
+    if (!patternData || !pointerSelectionState?.isBoxSelection || !selectionDrag) {
+        return;
+    }
+
+    const cell = getGridCoordinatesFromPointerEvent(event);
+    if (cell) {
+        selectionDrag.endX = cell.x;
+        selectionDrag.endY = cell.y;
+    }
+
+    applySelectionDrag({ append: pointerSelectionState.append, announce: false });
+    try {
+        patternCanvas.releasePointerCapture?.(pointerSelectionState.pointerId);
+    } catch (error) {
+        console.debug('releasePointerCapture skipped:', error);
+    }
+    pointerSelectionState = null;
+    selectionDrag = null;
+    patternCanvas.classList.remove('selection-mode');
+
+    requestAnimationFrame(() => {
+        drawPattern(patternData, patternData.width, patternData.height);
+    });
+
+    announceStatus(`已选择 ${selectedCells.size} 颗珠子。`);
+}
+
+patternCanvas.addEventListener('pointerdown', handleCanvasPointerDown);
+patternCanvas.addEventListener('pointermove', handleCanvasPointerMove);
+patternCanvas.addEventListener('pointerup', finishCanvasPointerSelection);
+patternCanvas.addEventListener('pointercancel', finishCanvasPointerSelection);
+patternCanvasWrapper.addEventListener('pointerdown', function(event) {
+    if (event.target !== patternCanvasWrapper || !patternData || selectedCells.size === 0) {
+        return;
+    }
+
+    clearSelectionState();
+    announceStatus('已清空当前选区。');
+});
+
+// 更新坐标信息显示
+function updateCoordinateInfo({ announce = true } = {}) {
+    if (!patternData || selectedCells.size === 0 || !selectedCell) {
+        coordinateInfo.classList.remove('is-visible');
+        coordinateInfo.setAttribute('aria-hidden', 'true');
+        updateEditSelectionSummary();
+        return;
+    }
+
+    if (selectedCells.size === 1) {
+        const colLabel = getColumnLabel(selectedCell.x);
+        const rowLabel = selectedCell.y + 1;
+        const coordinate = `${colLabel}${rowLabel}`;
+        const index = getCellIndex(selectedCell.x, selectedCell.y, patternData.width);
+        const color = patternData.pixels[index];
+
+        currentCoordinate.textContent = coordinate;
+        coordinateSwatch.style.background = color.hex;
+        coordinateColorName.textContent = `色号 ${color.name}`;
+        coordinateInfo.classList.add('is-visible');
+        coordinateInfo.setAttribute('aria-hidden', 'false');
+
+        if (announce) {
+            announceStatus(`当前选中坐标 ${coordinate}，颜色 ${color.name}。`);
+        }
+
+        updateEditSelectionSummary();
+        return;
+    }
+
+    const selectedColorCodes = new Set(
+        Array.from(selectedCells).map(index => patternData.pixels[index]?.code).filter(Boolean)
+    );
+    currentCoordinate.textContent = `${selectedCells.size} 颗`;
+    coordinateSwatch.style.background = selectedColorCodes.size === 1
+        ? patternData.pixels[Array.from(selectedCells)[0]].hex
+        : 'linear-gradient(135deg, #ffffff 0%, #d4d4d4 100%)';
+    coordinateColorName.textContent = selectedColorCodes.size === 1
+        ? `色号 ${Array.from(selectedColorCodes)[0]}`
+        : `混合颜色 · ${selectedColorCodes.size} 种`;
+    coordinateInfo.classList.add('is-visible');
+    coordinateInfo.setAttribute('aria-hidden', 'false');
+
+    if (announce) {
+        announceStatus(`当前选中 ${selectedCells.size} 颗珠子。`);
+    }
+
+    updateEditSelectionSummary();
 }
 
 // 高亮相同颜色按钮
@@ -1248,6 +1891,59 @@ hideSameColorBtn.addEventListener('click', function() {
     requestAnimationFrame(() => {
         drawPattern(patternData, patternData.width, patternData.height);
     });
+});
+
+replaceColorTrigger.addEventListener('click', function() {
+    if (replaceColorTrigger.disabled) {
+        return;
+    }
+
+    if (replaceColorPanel.hidden) {
+        openReplaceColorPanel();
+    } else {
+        closeReplaceColorPanel();
+    }
+});
+
+replaceColorSearch.addEventListener('input', function() {
+    renderReplaceColorList();
+});
+
+clearReplaceColorSearchBtn.addEventListener('click', function() {
+    replaceColorSearch.value = '';
+    renderReplaceColorList();
+    replaceColorSearch.focus();
+});
+
+replaceSelectionBtn.addEventListener('click', function() {
+    applyColorToSelection();
+});
+
+fillRegionBtn.addEventListener('click', function() {
+    fillConnectedRegionFromSelection();
+});
+
+selectSameColorBtn.addEventListener('click', function() {
+    selectAllSameColor();
+});
+
+clearSelectionBtn.addEventListener('click', function() {
+    clearSelectionState();
+    announceStatus('已清空当前选区。');
+});
+
+undoEditBtn.addEventListener('click', function() {
+    undoLastManualEdit();
+});
+
+resetEditsBtn.addEventListener('click', function() {
+    resetManualEdits();
+});
+
+document.addEventListener('pointerdown', function(event) {
+    if (!replaceColorPanel.hidden && !replaceColorPicker.contains(event.target)) {
+        closeReplaceColorPanel();
+    }
 });
 
 // 控制面板切换
@@ -1304,6 +2000,7 @@ colorPresetSelect.addEventListener('change', function() {
             }
 
             presetDescription.textContent = preset.description;
+            updateReplaceColorOptions();
 
             regeneratePatternIfPossible();
         }
@@ -1396,6 +2093,7 @@ cancelColorSelectionBtn.addEventListener('click', function() {
         colorSchemeManager.setColorSubset(savedCustomColors);
         presetDescription.textContent = `已选择 ${savedCustomColors.length} 种颜色`;
         editCustomColorsBtn.style.display = 'block';
+        updateReplaceColorOptions();
     } else {
         // 没有保存的自定义颜色，恢复到之前的预设
         colorPresetSelect.value = previousPreset;
@@ -1409,6 +2107,7 @@ cancelColorSelectionBtn.addEventListener('click', function() {
             presetDescription.textContent = preset.description;
         }
         editCustomColorsBtn.style.display = 'none';
+        updateReplaceColorOptions();
     }
 });
 
@@ -1424,6 +2123,7 @@ confirmColorSelectionBtn.addEventListener('click', function() {
     colorSchemeManager.setColorSubset(tempCustomColors);
     presetDescription.textContent = `已选择 ${tempCustomColors.length} 种颜色`;
     editCustomColorsBtn.style.display = 'block';
+    updateReplaceColorOptions();
 
     closeCustomColorPicker();
 
@@ -1432,7 +2132,9 @@ confirmColorSelectionBtn.addEventListener('click', function() {
 
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
-        if (customColorPicker.classList.contains('open')) {
+        if (!replaceColorPanel.hidden) {
+            closeReplaceColorPanel();
+        } else if (customColorPicker.classList.contains('open')) {
             cancelColorSelectionBtn.click();
         } else if (materialsDrawer.classList.contains('open')) {
             closeDrawer();

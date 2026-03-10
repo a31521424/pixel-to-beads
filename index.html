@@ -177,37 +177,72 @@
                 <!-- 图纸画布 -->
                 <div id="patternContainer" style="display: none;">
                     <div class="pattern-header">
-                        <h2>拼豆图纸</h2>
-                        <div id="coordinateInfo" class="coordinate-info" style="display: none;" aria-live="polite">
-                            <div class="coordinate-details">
-                                <span class="coordinate-label">坐标: <strong id="currentCoordinate">--</strong></span>
-                                <span class="coordinate-color">
-                                    <span class="coordinate-swatch" id="coordinateSwatch"></span>
-                                    <span id="coordinateColorName">--</span>
-                                </span>
+                        <div class="pattern-header-top">
+                            <h2>拼豆图纸</h2>
+                            <div id="coordinateInfo" class="coordinate-info" aria-live="polite" aria-hidden="true">
+                                <div class="coordinate-details">
+                                    <span class="coordinate-label">坐标: <strong id="currentCoordinate">--</strong></span>
+                                    <span class="coordinate-color">
+                                        <span class="coordinate-swatch" id="coordinateSwatch"></span>
+                                        <span id="coordinateColorName">--</span>
+                                    </span>
+                                </div>
+                                <div class="coordinate-actions">
+                                    <button id="highlightSameColorBtn" class="btn-coord" title="高亮相同颜色" aria-label="高亮相同颜色">🔆</button>
+                                    <button id="hideSameColorBtn" class="btn-coord" title="隐藏相同颜色" aria-label="隐藏相同颜色">👁️</button>
+                                </div>
                             </div>
-                            <div class="coordinate-actions">
-                                <button id="highlightSameColorBtn" class="btn-coord" title="高亮相同颜色" aria-label="高亮相同颜色">🔆</button>
-                                <button id="hideSameColorBtn" class="btn-coord" title="隐藏相同颜色" aria-label="隐藏相同颜色">👁️</button>
+                            <div class="pattern-controls">
+                                <div class="zoom-controls">
+                                    <button id="zoomOutBtn" class="btn-icon" title="缩小" aria-label="缩小图纸">−</button>
+                                    <span id="zoomLevel" class="zoom-level">100%</span>
+                                    <button id="zoomInBtn" class="btn-icon" title="放大" aria-label="放大图纸">+</button>
+                                    <button id="zoomResetBtn" class="btn-icon" title="重置" aria-label="重置缩放">⊙</button>
+                                </div>
+                                <label>
+                                    <input type="checkbox" id="showGrid" checked>
+                                    显示网格和坐标
+                                </label>
+                                <label>
+                                    <input type="checkbox" id="showNumbers">
+                                    显示色号
+                                </label>
+                                <button id="showMaterialsBtn" class="btn-secondary" aria-controls="materialsDrawer" aria-expanded="false">查看材料</button>
+                                <button id="downloadBtn" class="btn-secondary" aria-label="下载拼豆图纸 PNG">下载图纸</button>
                             </div>
                         </div>
-                        <div class="pattern-controls">
-                            <div class="zoom-controls">
-                                <button id="zoomOutBtn" class="btn-icon" title="缩小" aria-label="缩小图纸">−</button>
-                                <span id="zoomLevel" class="zoom-level">100%</span>
-                                <button id="zoomInBtn" class="btn-icon" title="放大" aria-label="放大图纸">+</button>
-                                <button id="zoomResetBtn" class="btn-icon" title="重置" aria-label="重置缩放">⊙</button>
+                        <div id="patternEditToolbar" class="pattern-edit-toolbar">
+                            <div class="edit-toolbar-main">
+                                <div class="edit-replace-group">
+                                    <span class="edit-select-label">替换为</span>
+                                    <div id="replaceColorPicker" class="replace-color-picker">
+                                        <button id="replaceColorTrigger" class="replace-color-trigger" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="replaceColorPanel">
+                                            <span id="replaceColorSwatch" class="replace-color-swatch" aria-hidden="true"></span>
+                                            <span class="replace-color-trigger-text">
+                                                <strong id="replaceColorCode">--</strong>
+                                                <span id="replaceColorHex">请选择颜色</span>
+                                            </span>
+                                            <span class="replace-color-caret" aria-hidden="true">▾</span>
+                                        </button>
+                                        <div id="replaceColorPanel" class="replace-color-panel" hidden>
+                                            <div class="replace-color-panel-header">
+                                                <input id="replaceColorSearch" type="search" class="replace-color-search" placeholder="搜索色号或 HEX" aria-label="搜索替换颜色">
+                                                <button id="clearReplaceColorSearchBtn" class="btn-secondary-small" type="button">清空</button>
+                                            </div>
+                                            <div id="replaceColorList" class="replace-color-list" role="listbox" aria-label="替换颜色列表"></div>
+                                        </div>
+                                    </div>
+                                    <button id="replaceSelectionBtn" class="btn-secondary" type="button">替换选中</button>
+                                    <button id="fillRegionBtn" class="btn-secondary" type="button">连通填充</button>
+                                </div>
+                                <div class="edit-actions-group">
+                                    <button id="selectSameColorBtn" class="btn-secondary" type="button">同色全选</button>
+                                    <button id="clearSelectionBtn" class="btn-secondary" type="button">清空选区</button>
+                                    <button id="undoEditBtn" class="btn-secondary" type="button">撤销</button>
+                                    <button id="resetEditsBtn" class="btn-secondary" type="button">重置编辑</button>
+                                </div>
                             </div>
-                            <label>
-                                <input type="checkbox" id="showGrid" checked>
-                                显示网格和坐标
-                            </label>
-                            <label>
-                                <input type="checkbox" id="showNumbers">
-                                显示色号
-                            </label>
-                            <button id="showMaterialsBtn" class="btn-secondary" aria-controls="materialsDrawer" aria-expanded="false">查看材料</button>
-                            <button id="downloadBtn" class="btn-secondary" aria-label="下载拼豆图纸 PNG">下载图纸</button>
+                            <p id="editToolbarHint" class="edit-toolbar-hint">单击选中单颗珠子；按住 Ctrl 或 Command 可多点追加；按住 Shift 拖拽可框选，Shift + Ctrl / Command 可追加框选区域。</p>
                         </div>
                     </div>
                     <div class="pattern-canvas-wrapper">
