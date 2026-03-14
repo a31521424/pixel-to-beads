@@ -91,7 +91,19 @@
                     </div>
                     <p id="uploadHint" class="upload-hint">支持照片、头像、Logo、插画和像素画，图片仅在浏览器本地处理。</p>
                     <div class="preview-container" id="previewContainer" style="display: none;">
-                        <img id="originalImage" alt="原图预览">
+                        <div class="preview-stage" id="cropStage">
+                            <img id="originalImage" alt="原图预览">
+                            <div id="cropOverlay" class="crop-overlay" aria-hidden="true">
+                                <div id="cropSelection" class="crop-selection" hidden></div>
+                            </div>
+                        </div>
+                        <div class="crop-toolbar">
+                            <p id="cropHint" class="crop-hint">拖拽框选主体范围，重新拖拽可改选；未框选时默认使用整张图片。</p>
+                            <div class="crop-actions">
+                                <span id="cropStatus" class="crop-status">当前：整张图片</span>
+                                <button id="resetCropBtn" class="btn-secondary" type="button" disabled>使用整图</button>
+                            </div>
+                        </div>
                     </div>
                 </section>
 

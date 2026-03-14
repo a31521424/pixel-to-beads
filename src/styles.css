@@ -469,10 +469,94 @@ section h2 {
     margin-top: 10px;
 }
 
-.preview-container img {
-    max-width: 100%;
-    border-radius: 4px;
+.preview-stage {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    border-radius: 10px;
     border: 1px solid var(--gray-200);
+    background:
+        linear-gradient(45deg, var(--gray-100) 25%, transparent 25%),
+        linear-gradient(-45deg, var(--gray-100) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, var(--gray-100) 75%),
+        linear-gradient(-45deg, transparent 75%, var(--gray-100) 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+.preview-container img {
+    display: block;
+    max-width: 100%;
+    width: 100%;
+    height: auto;
+}
+
+.crop-overlay {
+    position: absolute;
+    inset: 0;
+    cursor: crosshair;
+    touch-action: none;
+}
+
+.crop-selection {
+    position: absolute;
+    border: 2px solid var(--white);
+    border-radius: 10px;
+    box-shadow: 0 0 0 999px rgba(23, 23, 23, 0.5);
+    background: rgba(255, 255, 255, 0.12);
+    pointer-events: none;
+}
+
+.crop-selection::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 1px solid rgba(23, 23, 23, 0.22);
+    border-radius: inherit;
+}
+
+.crop-selection::after {
+    content: '';
+    position: absolute;
+    inset: 4px;
+    border: 1px dashed rgba(255, 255, 255, 0.88);
+    border-radius: 6px;
+}
+
+.crop-toolbar {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.crop-hint,
+.crop-status {
+    font-size: 0.75em;
+    line-height: 1.5;
+}
+
+.crop-hint {
+    color: var(--gray-500);
+}
+
+.crop-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.crop-status {
+    color: var(--gray-700);
+    font-weight: 500;
+}
+
+.crop-actions .btn-secondary:disabled {
+    cursor: not-allowed;
+    color: var(--gray-400);
+    border-color: var(--gray-200);
+    background: var(--gray-50);
 }
 
 .setting-item {

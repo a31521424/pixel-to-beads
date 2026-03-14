@@ -24,11 +24,17 @@ import { COLOR_PRESETS, customColorManager } from './colorPresets.js';
 import { DEFAULT_PATTERN_STRATEGY, PATTERN_STRATEGIES } from './renderStrategies.js';
 
 let uploadedImage = null;
+let originalUploadedImage = null;
 let patternData = null;
 
 const imageInput = document.getElementById('imageInput');
 const uploadArea = document.getElementById('uploadArea');
 const previewContainer = document.getElementById('previewContainer');
+const cropOverlay = document.getElementById('cropOverlay');
+const cropSelection = document.getElementById('cropSelection');
+const cropHint = document.getElementById('cropHint');
+const cropStatus = document.getElementById('cropStatus');
+const resetCropBtn = document.getElementById('resetCropBtn');
 const originalImage = document.getElementById('originalImage');
 const generationStatus = document.getElementById('generationStatus');
 const widthInput = document.getElementById('widthInput');
@@ -116,11 +122,283 @@ let manualEditHistory = [];
 let originalPatternPixels = [];
 const MAX_EDIT_HISTORY = 30;
 let selectedReplacementColorCode = '';
+let imageCropRect = null;
+let cropPointerState = null;
+const MIN_CROP_SELECTION_DISPLAY_SIZE = 12;
 
 function announceStatus(message) {
     if (generationStatus) {
         generationStatus.textContent = message;
     }
+}
+
+function clampValue(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+}
+
+function getFullImageRect(image = originalUploadedImage) {
+    if (!image) {
+        return null;
+    }
+
+    return {
+        x: 0,
+        y: 0,
+        width: image.width,
+        height: image.height
+    };
+}
+
+function getEffectiveImageRect() {
+    return imageCropRect || getFullImageRect();
+}
+
+function normalizeCropRect(rect, sourceWidth, sourceHeight) {
+    if (!rect || sourceWidth <= 0 || sourceHeight <= 0) {
+        return null;
+    }
+
+    const left = clampValue(Math.min(rect.x, rect.x + rect.width), 0, sourceWidth);
+    const top = clampValue(Math.min(rect.y, rect.y + rect.height), 0, sourceHeight);
+    const right = clampValue(Math.max(rect.x, rect.x + rect.width), 0, sourceWidth);
+    const bottom = clampValue(Math.max(rect.y, rect.y + rect.height), 0, sourceHeight);
+    const width = Math.max(1, Math.round(right - left));
+    const height = Math.max(1, Math.round(bottom - top));
+
+    if (width >= sourceWidth && height >= sourceHeight && left === 0 && top === 0) {
+        return null;
+    }
+
+    return {
+        x: Math.round(left),
+        y: Math.round(top),
+        width,
+        height
+    };
+}
+
+function syncUploadedImageFromCrop() {
+    if (!originalUploadedImage) {
+        uploadedImage = null;
+        return;
+    }
+
+    if (!imageCropRect) {
+        uploadedImage = originalUploadedImage;
+        return;
+    }
+
+    const cropCanvas = document.createElement('canvas');
+    cropCanvas.width = imageCropRect.width;
+    cropCanvas.height = imageCropRect.height;
+    const cropContext = cropCanvas.getContext('2d');
+
+    cropContext.drawImage(
+        originalUploadedImage,
+        imageCropRect.x,
+        imageCropRect.y,
+        imageCropRect.width,
+        imageCropRect.height,
+        0,
+        0,
+        imageCropRect.width,
+        imageCropRect.height
+    );
+
+    uploadedImage = cropCanvas;
+}
+
+function renderCropSelectionBox(rect, containerWidth, containerHeight) {
+    if (!rect || containerWidth <= 0 || containerHeight <= 0) {
+        cropSelection.hidden = true;
+        return;
+    }
+
+    cropSelection.hidden = false;
+    cropSelection.style.left = `${(rect.left / containerWidth) * 100}%`;
+    cropSelection.style.top = `${(rect.top / containerHeight) * 100}%`;
+    cropSelection.style.width = `${(rect.width / containerWidth) * 100}%`;
+    cropSelection.style.height = `${(rect.height / containerHeight) * 100}%`;
+}
+
+function renderCropSelection() {
+    if (!originalUploadedImage || !imageCropRect) {
+        cropSelection.hidden = true;
+        return;
+    }
+
+    renderCropSelectionBox(
+        {
+            left: imageCropRect.x,
+            top: imageCropRect.y,
+            width: imageCropRect.width,
+            height: imageCropRect.height
+        },
+        originalUploadedImage.width,
+        originalUploadedImage.height
+    );
+}
+
+function updateCropStatus() {
+    const activeRect = getEffectiveImageRect();
+    if (!activeRect) {
+        cropStatus.textContent = '当前：整张图片';
+        cropHint.textContent = '拖拽框选主体范围，重新拖拽可改选；未框选时默认使用整张图片。';
+        resetCropBtn.disabled = true;
+        return;
+    }
+
+    const isCropped = Boolean(imageCropRect);
+    cropStatus.textContent = isCropped
+        ? `当前：主体区域 ${activeRect.width} x ${activeRect.height}`
+        : `当前：整张图片 ${activeRect.width} x ${activeRect.height}`;
+    cropHint.textContent = isCropped
+        ? '当前将按框选主体生成图纸；重新拖拽可改选，也可以切回整图。'
+        : '拖拽框选主体范围，重新拖拽可改选；未框选时默认使用整张图片。';
+    resetCropBtn.disabled = !isCropped;
+}
+
+function applyCropRect(nextCropRect, options = {}) {
+    const {
+        announce = true,
+        updateRatio = true,
+        regenerate = Boolean(patternData)
+    } = options;
+
+    if (!originalUploadedImage) {
+        return;
+    }
+
+    imageCropRect = nextCropRect
+        ? normalizeCropRect(nextCropRect, originalUploadedImage.width, originalUploadedImage.height)
+        : null;
+
+    syncUploadedImageFromCrop();
+    renderCropSelection();
+    updateCropStatus();
+
+    if (updateRatio && keepRatioCheckbox.checked && uploadedImage) {
+        updateDimensionsFromRatio(uploadedImage.width, uploadedImage.height);
+    }
+
+    if (regenerate && patternData) {
+        generatePattern();
+    }
+
+    if (announce) {
+        if (imageCropRect) {
+            announceStatus(`已框选主体区域 ${imageCropRect.width} x ${imageCropRect.height}，生成图纸时将使用该区域。`);
+        } else {
+            announceStatus('已切换为整张图片，生成图纸时将使用原图。');
+        }
+    }
+}
+
+function getCropOverlayPoint(event) {
+    const rect = cropOverlay.getBoundingClientRect();
+    return {
+        x: clampValue(event.clientX - rect.left, 0, rect.width),
+        y: clampValue(event.clientY - rect.top, 0, rect.height),
+        width: rect.width,
+        height: rect.height
+    };
+}
+
+function getDisplaySelectionRect(startX, startY, endX, endY) {
+    const left = Math.min(startX, endX);
+    const top = Math.min(startY, endY);
+    const width = Math.abs(endX - startX);
+    const height = Math.abs(endY - startY);
+
+    return { left, top, width, height };
+}
+
+function updateCropSelectionDraft() {
+    if (!cropPointerState) {
+        return;
+    }
+
+    renderCropSelectionBox(
+        getDisplaySelectionRect(
+            cropPointerState.startX,
+            cropPointerState.startY,
+            cropPointerState.currentX,
+            cropPointerState.currentY
+        ),
+        cropPointerState.containerWidth,
+        cropPointerState.containerHeight
+    );
+}
+
+function handleCropPointerDown(event) {
+    if (!originalUploadedImage || event.button !== 0) {
+        return;
+    }
+
+    event.preventDefault();
+    const point = getCropOverlayPoint(event);
+    cropPointerState = {
+        pointerId: event.pointerId,
+        startX: point.x,
+        startY: point.y,
+        currentX: point.x,
+        currentY: point.y,
+        containerWidth: point.width,
+        containerHeight: point.height
+    };
+
+    cropOverlay.setPointerCapture(event.pointerId);
+    updateCropSelectionDraft();
+}
+
+function handleCropPointerMove(event) {
+    if (!cropPointerState || event.pointerId !== cropPointerState.pointerId) {
+        return;
+    }
+
+    const point = getCropOverlayPoint(event);
+    cropPointerState.currentX = point.x;
+    cropPointerState.currentY = point.y;
+    updateCropSelectionDraft();
+}
+
+function finishCropSelection(event) {
+    if (!cropPointerState || event.pointerId !== cropPointerState.pointerId) {
+        return;
+    }
+
+    const point = getCropOverlayPoint(event);
+    cropPointerState.currentX = point.x;
+    cropPointerState.currentY = point.y;
+
+    const selectionRect = getDisplaySelectionRect(
+        cropPointerState.startX,
+        cropPointerState.startY,
+        cropPointerState.currentX,
+        cropPointerState.currentY
+    );
+
+    if (cropOverlay.hasPointerCapture(event.pointerId)) {
+        cropOverlay.releasePointerCapture(event.pointerId);
+    }
+
+    cropPointerState = null;
+
+    if (
+        selectionRect.width < MIN_CROP_SELECTION_DISPLAY_SIZE ||
+        selectionRect.height < MIN_CROP_SELECTION_DISPLAY_SIZE
+    ) {
+        renderCropSelection();
+        announceStatus('框选区域过小，已忽略本次截取。');
+        return;
+    }
+
+    applyCropRect({
+        x: (selectionRect.left / point.width) * originalUploadedImage.width,
+        y: (selectionRect.top / point.height) * originalUploadedImage.height,
+        width: (selectionRect.width / point.width) * originalUploadedImage.width,
+        height: (selectionRect.height / point.height) * originalUploadedImage.height
+    });
 }
 
 async function initialize() {
@@ -158,6 +436,7 @@ async function initialize() {
     updatePatternStrategyDescription();
     updateReplaceColorOptions();
     updateEditSelectionSummary();
+    updateCropStatus();
     announceStatus('工具已就绪，请上传图片并生成拼豆图纸。');
 
     // 初始化控制面板切换按钮状态
@@ -446,6 +725,14 @@ function regeneratePatternIfPossible() {
 imageInput.addEventListener('change', handleImageUpload);
 uploadArea.addEventListener('dragover', handleDragOver);
 uploadArea.addEventListener('drop', handleDrop);
+cropOverlay.addEventListener('pointerdown', handleCropPointerDown);
+cropOverlay.addEventListener('pointermove', handleCropPointerMove);
+cropOverlay.addEventListener('pointerup', finishCropSelection);
+cropOverlay.addEventListener('pointercancel', finishCropSelection);
+originalImage.addEventListener('load', renderCropSelection);
+resetCropBtn.addEventListener('click', function() {
+    applyCropRect(null);
+});
 
 function handleImageUpload(event) {
     const file = event.target.files[0];
@@ -475,16 +762,17 @@ function loadImage(file) {
     reader.onload = function(e) {
         const img = new Image();
         img.onload = function() {
-            uploadedImage = img;
+            originalUploadedImage = img;
             originalImage.src = e.target.result;
             originalImage.alt = `上传图片预览，原始尺寸 ${img.width} x ${img.height}`;
             previewContainer.style.display = 'block';
             generateBtn.disabled = false;
-            announceStatus(`已加载图片，原始尺寸 ${img.width} x ${img.height}，现在可以生成拼豆图纸。`);
+            applyCropRect(null, { announce: false, updateRatio: false, regenerate: false });
+            announceStatus(`已加载图片，原始尺寸 ${img.width} x ${img.height}。现在可以拖拽框选主体，或直接生成拼豆图纸。`);
 
             // 根据图片比例自动调整宽高
             if (keepRatioCheckbox.checked) {
-                updateDimensionsFromRatio(img.width, img.height);
+                updateDimensionsFromRatio(uploadedImage.width, uploadedImage.height);
             }
         };
         img.src = e.target.result;
@@ -1958,6 +2246,7 @@ window.addEventListener('resize', function() {
     clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(function() {
         updateTogglePanelButton();
+        renderCropSelection();
         if (patternData) {
             drawPattern(patternData, patternData.width, patternData.height);
         }
