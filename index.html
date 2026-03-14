@@ -162,17 +162,17 @@
                     <button id="generateBtn" class="btn-primary" disabled aria-label="生成拼豆图纸">生成图纸</button>
                 </section>
 
-                <div class="control-panel-footer">
+                <div class="control-panel-footer" id="feedbackEntryPanel">
                     <p class="feedback-entry-label">有想法想说？</p>
-                    <a
-                        class="moaform-embed moaform-style-button feedback-entry-btn"
-                        href="https://moaform.com/q/7EAjcp?embed"
-                        data-type="popup"
-                        target="_blank"
-                        rel="noopener noreferrer"
+                    <button
+                        id="openFeedbackModal"
+                        class="feedback-entry-btn"
+                        type="button"
+                        aria-controls="feedbackModal"
+                        aria-expanded="false"
                     >
                         留言反馈
-                    </a>
+                    </button>
                 </div>
             </aside>
 
@@ -409,6 +409,24 @@
                 </div>
             </div>
         </div>
+
+        <div id="feedbackModal" class="feedback-modal" role="dialog" aria-modal="true" aria-labelledby="feedbackModalTitle" aria-hidden="true">
+            <div id="feedbackModalOverlay" class="feedback-modal-overlay"></div>
+            <div class="feedback-modal-content">
+                <div class="feedback-modal-header">
+                    <div class="feedback-modal-title-group">
+                        <h2 id="feedbackModalTitle">匿名留言反馈</h2>
+                        <p>欢迎留下建议、问题或使用体验，其他用户也可以看到已有留言。</p>
+                    </div>
+                    <button id="closeFeedbackModal" class="close-feedback-modal" aria-label="关闭留言反馈">×</button>
+                </div>
+                <div class="feedback-modal-body">
+                    <div id="feedbackCommentsMount" class="feedback-comments-mount" data-loading="true">
+                        <p class="feedback-comments-loading">留言板加载中...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Structured Data / JSON-LD for SEO -->
@@ -516,13 +534,6 @@
     </script>
 
     <script type="module" src="/src/app.js"></script>
-    <script>
-    (function() {
-        var s = document.createElement('script');
-        s.src = 'https://asset.moaform.com/embed/e.js';
-        var b = document.getElementsByTagName('body')[0];
-        b.insertBefore(s, b.firstChild);
-    })();
-    </script>
+    <script src="https://talk.hyvor.com/embed/embed.js" type="module"></script>
 </body>
 </html>

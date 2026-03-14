@@ -67,6 +67,12 @@ const showMaterialsBtn = document.getElementById('showMaterialsBtn');
 
 const toggleControlPanelBtn = document.getElementById('toggleControlPanel');
 const controlPanel = document.getElementById('controlPanel');
+const feedbackEntryPanel = document.getElementById('feedbackEntryPanel');
+const openFeedbackModalBtn = document.getElementById('openFeedbackModal');
+const feedbackModal = document.getElementById('feedbackModal');
+const feedbackModalOverlay = document.getElementById('feedbackModalOverlay');
+const closeFeedbackModalBtn = document.getElementById('closeFeedbackModal');
+const feedbackCommentsMount = document.getElementById('feedbackCommentsMount');
 
 const coordinateInfo = document.getElementById('coordinateInfo');
 const currentCoordinate = document.getElementById('currentCoordinate');
@@ -125,11 +131,94 @@ let selectedReplacementColorCode = '';
 let imageCropRect = null;
 let cropPointerState = null;
 const MIN_CROP_SELECTION_DISPLAY_SIZE = 12;
+const FEEDBACK_ENTRY_FADE_DELAY = 10000;
+const HYVOR_WEBSITE_ID = '15152';
+const HYVOR_PAGE_ID = 'pixel-to-beads-home';
+let feedbackEntryFadeTimeout = null;
+let feedbackCommentsInitialized = false;
+let feedbackLastFocusedElement = null;
 
 function announceStatus(message) {
     if (generationStatus) {
         generationStatus.textContent = message;
     }
+}
+
+function setFeedbackEntryFaded(isFaded) {
+    if (!feedbackEntryPanel) {
+        return;
+    }
+
+    feedbackEntryPanel.classList.toggle('is-faded', isFaded);
+}
+
+function scheduleFeedbackEntryFade() {
+    if (!feedbackEntryPanel) {
+        return;
+    }
+
+    clearTimeout(feedbackEntryFadeTimeout);
+    setFeedbackEntryFaded(false);
+    feedbackEntryFadeTimeout = window.setTimeout(function() {
+        setFeedbackEntryFaded(true);
+    }, FEEDBACK_ENTRY_FADE_DELAY);
+}
+
+function renderFeedbackCommentsIfNeeded() {
+    if (!feedbackCommentsMount || feedbackCommentsInitialized) {
+        return;
+    }
+
+    const commentsElement = document.createElement('hyvor-talk-comments');
+    commentsElement.setAttribute('website-id', HYVOR_WEBSITE_ID);
+    commentsElement.setAttribute('page-id', HYVOR_PAGE_ID);
+
+    feedbackCommentsMount.innerHTML = '';
+    feedbackCommentsMount.appendChild(commentsElement);
+    feedbackCommentsMount.setAttribute('data-loading', 'true');
+    feedbackCommentsInitialized = true;
+
+    if (window.customElements?.get('hyvor-talk-comments')) {
+        feedbackCommentsMount.setAttribute('data-loading', 'false');
+        return;
+    }
+
+    window.customElements?.whenDefined('hyvor-talk-comments').then(function() {
+        feedbackCommentsMount?.setAttribute('data-loading', 'false');
+    });
+}
+
+function openFeedbackModal() {
+    if (!feedbackModal) {
+        return;
+    }
+
+    feedbackLastFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    renderFeedbackCommentsIfNeeded();
+    feedbackModal.classList.add('open');
+    feedbackModal.setAttribute('aria-hidden', 'false');
+    openFeedbackModalBtn?.setAttribute('aria-expanded', 'true');
+    document.body.style.overflow = 'hidden';
+    setFeedbackEntryFaded(false);
+    announceStatus('已打开匿名留言反馈。');
+    window.setTimeout(function() {
+        closeFeedbackModalBtn?.focus();
+    }, 0);
+}
+
+function closeFeedbackModal() {
+    if (!feedbackModal?.classList.contains('open')) {
+        return;
+    }
+
+    feedbackModal.classList.remove('open');
+    feedbackModal.setAttribute('aria-hidden', 'true');
+    openFeedbackModalBtn?.setAttribute('aria-expanded', 'false');
+    document.body.style.overflow = '';
+    announceStatus('已关闭匿名留言反馈。');
+    feedbackLastFocusedElement?.focus?.();
+    feedbackLastFocusedElement = null;
+    scheduleFeedbackEntryFade();
 }
 
 function clampValue(value, min, max) {
@@ -437,6 +526,7 @@ async function initialize() {
     updateReplaceColorOptions();
     updateEditSelectionSummary();
     updateCropStatus();
+    scheduleFeedbackEntryFade();
     announceStatus('工具已就绪，请上传图片并生成拼豆图纸。');
 
     // 初始化控制面板切换按钮状态
@@ -794,6 +884,39 @@ cropOverlay.addEventListener('pointercancel', finishCropSelection);
 originalImage.addEventListener('load', renderCropSelection);
 resetCropBtn.addEventListener('click', function() {
     applyCropRect(null);
+});
+
+if (feedbackEntryPanel) {
+    feedbackEntryPanel.addEventListener('mouseenter', function() {
+        setFeedbackEntryFaded(false);
+    });
+    feedbackEntryPanel.addEventListener('mouseleave', scheduleFeedbackEntryFade);
+    feedbackEntryPanel.addEventListener('focusin', function() {
+        setFeedbackEntryFaded(false);
+    });
+    feedbackEntryPanel.addEventListener('focusout', function() {
+        window.setTimeout(function() {
+            if (!feedbackEntryPanel.contains(document.activeElement)) {
+                scheduleFeedbackEntryFade();
+            }
+        }, 0);
+    });
+    feedbackEntryPanel.addEventListener('pointerdown', function() {
+        setFeedbackEntryFaded(false);
+        scheduleFeedbackEntryFade();
+    });
+}
+
+openFeedbackModalBtn?.addEventListener('click', function() {
+    openFeedbackModal();
+});
+
+feedbackModalOverlay?.addEventListener('click', function() {
+    closeFeedbackModal();
+});
+
+closeFeedbackModalBtn?.addEventListener('click', function() {
+    closeFeedbackModal();
 });
 
 function handleImageUpload(event) {
@@ -2541,6 +2664,8 @@ document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
         if (!replaceColorPanel.hidden) {
             closeReplaceColorPanel();
+        } else if (feedbackModal?.classList.contains('open')) {
+            closeFeedbackModal();
         } else if (customColorPicker.classList.contains('open')) {
             cancelColorSelectionBtn.click();
         } else if (materialsDrawer.classList.contains('open')) {
