@@ -674,6 +674,68 @@ function clearSelectionState({ redraw = true } = {}) {
     }
 }
 
+function appendSelectionIndexes(indexes, { primaryCell = null, announce = true } = {}) {
+    if (!patternData || !Array.isArray(indexes) || indexes.length === 0) {
+        return;
+    }
+
+    indexes.forEach(index => {
+        if (index >= 0) {
+            selectedCells.add(index);
+        }
+    });
+
+    if (primaryCell) {
+        selectedCell = { x: primaryCell.x, y: primaryCell.y };
+    } else if (!selectedCell) {
+        const firstCell = getCellFromIndex(indexes[0], patternData.width);
+        if (firstCell) {
+            selectedCell = firstCell;
+        }
+    }
+
+    if (selectedCells.size > 1) {
+        resetColorAssistModes();
+    }
+
+    updateCoordinateInfo({ announce });
+    updateEditSelectionSummary();
+}
+
+function getLineSelectionIndexes(fromCell, toCell) {
+    if (!patternData || !fromCell || !toCell) {
+        return [];
+    }
+
+    const indexes = [];
+    let currentX = fromCell.x;
+    let currentY = fromCell.y;
+    const deltaX = Math.abs(toCell.x - fromCell.x);
+    const deltaY = Math.abs(toCell.y - fromCell.y);
+    const stepX = fromCell.x < toCell.x ? 1 : -1;
+    const stepY = fromCell.y < toCell.y ? 1 : -1;
+    let error = deltaX - deltaY;
+
+    while (true) {
+        indexes.push(getCellIndex(currentX, currentY, patternData.width));
+        if (currentX === toCell.x && currentY === toCell.y) {
+            break;
+        }
+
+        const doubledError = error * 2;
+        if (doubledError > -deltaY) {
+            error -= deltaY;
+            currentX += stepX;
+        }
+        if (doubledError < deltaX) {
+            error += deltaX;
+            currentY += stepY;
+        }
+    }
+
+    return indexes;
+}
+
 function resetManualEditHistory() {
     manualEditHistory = [];
     originalPatternPixels = patternData ? clonePixelArray(patternData.pixels) : [];
@@ -2011,7 +2073,7 @@ function handleCanvasPointerDown(event) {
         pointerSelectionState = {
             pointerId: event.pointerId,
             append: appendSelection,
-            isBoxSelection: true
+            mode: 'box'
         };
         selectionDrag = {
             startX: cell.x,
@@ -2027,6 +2089,27 @@ function handleCanvasPointerDown(event) {
         return;
     }
 
+    if (appendSelection) {
+        const startIndex = getCellIndex(cell.x, cell.y, patternData.width);
+        pointerSelectionState = {
+            pointerId: event.pointerId,
+            append: true,
+            mode: 'paint',
+            lastCell: { x: cell.x, y: cell.y }
+        };
+        selectionDrag = null;
+        patternCanvas.classList.add('selection-mode');
+        patternCanvas.setPointerCapture?.(event.pointerId);
+        appendSelectionIndexes([startIndex], {
+            primaryCell: cell,
+            announce: false
+        });
+        requestAnimationFrame(() => {
+            drawPattern(patternData, patternData.width, patternData.height);
+        });
+        return;
+    }
+
     patternCanvas.classList.remove('selection-mode');
     selectionDrag = null;
     pointerSelectionState = null;
@@ -2034,7 +2117,7 @@ function handleCanvasPointerDown(event) {
 }
 
 function handleCanvasPointerMove(event) {
-    if (!patternData || !pointerSelectionState?.isBoxSelection || !selectionDrag) {
+    if (!patternData || !pointerSelectionState) {
         return;
     }
 
@@ -2043,27 +2126,62 @@ function handleCanvasPointerMove(event) {
         return;
     }
 
-    selectionDrag.endX = cell.x;
-    selectionDrag.endY = cell.y;
+    if (pointerSelectionState.mode === 'box' && selectionDrag) {
+        selectionDrag.endX = cell.x;
+        selectionDrag.endY = cell.y;
+    } else if (pointerSelectionState.mode === 'paint') {
+        const previousCell = pointerSelectionState.lastCell;
+        if (!previousCell || (previousCell.x === cell.x && previousCell.y === cell.y)) {
+            return;
+        }
+
+        appendSelectionIndexes(
+            getLineSelectionIndexes(previousCell, cell),
+            {
+                primaryCell: cell,
+                announce: false
+            }
+        );
+        pointerSelectionState.lastCell = { x: cell.x, y: cell.y };
+    } else {
+        return;
+    }
+
     requestAnimationFrame(() => {
         drawPattern(patternData, patternData.width, patternData.height);
     });
 }
 
 function finishCanvasPointerSelection(event) {
-    if (!patternData || !pointerSelectionState?.isBoxSelection || !selectionDrag) {
+    if (!patternData || !pointerSelectionState) {
         return;
     }
 
-    const cell = getGridCoordinatesFromPointerEvent(event);
-    if (cell) {
-        selectionDrag.endX = cell.x;
-        selectionDrag.endY = cell.y;
+    const { mode, pointerId, append } = pointerSelectionState;
+
+    if (mode === 'box' && selectionDrag) {
+        const cell = getGridCoordinatesFromPointerEvent(event);
+        if (cell) {
+            selectionDrag.endX = cell.x;
+            selectionDrag.endY = cell.y;
+        }
+
+        applySelectionDrag({ append, announce: false });
+    } else if (mode === 'paint') {
+        const cell = getGridCoordinatesFromPointerEvent(event);
+        if (cell && pointerSelectionState.lastCell) {
+            appendSelectionIndexes(
+                getLineSelectionIndexes(pointerSelectionState.lastCell, cell),
+                {
+                    primaryCell: cell,
+                    announce: false
+                }
+            );
+        }
     }
 
-    applySelectionDrag({ append: pointerSelectionState.append, announce: false });
     try {
-        patternCanvas.releasePointerCapture?.(pointerSelectionState.pointerId);
+        patternCanvas.releasePointerCapture?.(pointerId);
     } catch (error) {
         console.debug('releasePointerCapture skipped:', error);
     }
