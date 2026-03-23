@@ -139,13 +139,14 @@ const FEEDBACK_ENTRY_FADE_DELAY = 10000;
 const CUSDIS_INIT_POLL_INTERVAL = 250;
 const CUSDIS_INIT_MAX_ATTEMPTS = 80;
 const CUSDIS_LOAD_FALLBACK_DELAY = 1500;
-const EXPORT_PADDING = 48;
-const EXPORT_SECTION_GAP = 32;
-const EXPORT_MIN_WIDTH = 1280;
-const EXPORT_MAX_STATS_COLUMNS = 4;
-const EXPORT_COLUMN_WIDTH = 240;
-const EXPORT_COLUMN_GAP = 24;
-const EXPORT_ROW_HEIGHT = 42;
+const EXPORT_PADDING = 40;
+const EXPORT_SECTION_GAP = 28;
+const EXPORT_MIN_WIDTH = 1120;
+const EXPORT_MAX_STATS_COLUMNS = 6;
+const EXPORT_TARGET_ITEMS_PER_COLUMN = 16;
+const EXPORT_COLUMN_WIDTH = 188;
+const EXPORT_COLUMN_GAP = 16;
+const EXPORT_ROW_HEIGHT = 52;
 let feedbackEntryFadeTimeout = null;
 let feedbackCommentsInitPoll = null;
 let feedbackCommentsLoadFallback = null;
@@ -1887,31 +1888,40 @@ function createExportCanvas() {
         return null;
     }
 
+    const exportMetrics = getPatternRenderMetrics(patternData.width, patternData.height);
+    const exportCellSize = exportMetrics.cellSize * exportMetrics.renderScale;
+    const legendScale = clampValue(exportCellSize / 48, 1, 2.2);
     const materialStats = getMaterialStats(patternData);
     const title = 'Pixel to Beads 图纸导出';
     const summaryLine = `图纸尺寸 ${patternData.width} × ${patternData.height} · 共 ${materialStats.totalBeads} 颗 · 使用 ${materialStats.materials.length} 色`;
     const detailLine = `颜色模板 ${getSelectedOptionLabel(colorPresetSelect) || '未命名'} · 图像策略 ${getSelectedOptionLabel(patternStrategySelect) || '默认'}`;
-
-    let exportWidth = Math.max(patternCanvas.width + EXPORT_PADDING * 2, EXPORT_MIN_WIDTH);
-    const preferredColumns = Math.min(
-        EXPORT_MAX_STATS_COLUMNS,
-        Math.max(1, Math.ceil(materialStats.materials.length / 14))
-    );
-    const preferredStatsWidth = EXPORT_PADDING * 2 +
-        preferredColumns * EXPORT_COLUMN_WIDTH +
-        (preferredColumns - 1) * EXPORT_COLUMN_GAP +
-        56;
-    exportWidth = Math.max(exportWidth, preferredStatsWidth);
-
-    const sectionWidth = exportWidth - EXPORT_PADDING * 2;
-    const availableStatsWidth = sectionWidth - 56;
     const statsColumns = Math.min(
         EXPORT_MAX_STATS_COLUMNS,
-        Math.max(1, Math.floor((availableStatsWidth + EXPORT_COLUMN_GAP) / (EXPORT_COLUMN_WIDTH + EXPORT_COLUMN_GAP)))
+        Math.max(1, Math.ceil(Math.max(1, materialStats.materials.length) / EXPORT_TARGET_ITEMS_PER_COLUMN))
     );
     const itemsPerColumn = Math.max(1, Math.ceil(Math.max(1, materialStats.materials.length) / statsColumns));
-    const statsHeaderHeight = 74;
-    const statsSectionHeight = 28 * 2 + statsHeaderHeight + itemsPerColumn * EXPORT_ROW_HEIGHT;
+    const scaledColumnWidth = Math.round(EXPORT_COLUMN_WIDTH * legendScale);
+    const scaledColumnGap = Math.round(EXPORT_COLUMN_GAP * legendScale);
+    const scaledRowHeight = Math.round(EXPORT_ROW_HEIGHT * legendScale);
+    const statsCardPadding = Math.round(24 * legendScale);
+    const statsHeaderHeight = Math.round(66 * legendScale);
+    const statsSectionHeight = statsCardPadding * 2 + statsHeaderHeight + itemsPerColumn * scaledRowHeight;
+    const statsContentWidth = statsColumns * scaledColumnWidth + (statsColumns - 1) * scaledColumnGap;
+    const statsSectionWidth = statsContentWidth + statsCardPadding * 2;
+    const summaryBadgeWidth = Math.round(152 * legendScale);
+    const summaryBadgeHeight = Math.round(34 * legendScale);
+    const sectionRadius = Math.round(20 * legendScale);
+    const summaryBadgeRadius = Math.round(11 * legendScale);
+    const statsTitleFontSize = Math.round(30 * legendScale);
+    const statsBodyFontSize = Math.round(17 * legendScale);
+    const statsItemFontSize = Math.round(19 * legendScale);
+    const statsHexFontSize = Math.round(14 * legendScale);
+    const statsCountFontSize = Math.round(17 * legendScale);
+    const statsTotalFontSize = Math.round(16 * legendScale);
+
+    let exportWidth = Math.max(patternCanvas.width + EXPORT_PADDING * 2, EXPORT_MIN_WIDTH);
+    const preferredStatsWidth = statsSectionWidth + EXPORT_PADDING * 2;
+    exportWidth = Math.max(exportWidth, preferredStatsWidth);
     const headerHeight = 96;
     const exportHeight = EXPORT_PADDING +
         headerHeight +
@@ -1949,64 +1959,86 @@ function createExportCanvas() {
     ctx.lineWidth = 2;
     ctx.strokeRect(patternX, patternY, patternCanvas.width, patternCanvas.height);
 
-    const sectionX = EXPORT_PADDING;
+    const sectionWidth = Math.min(exportWidth - EXPORT_PADDING * 2, statsSectionWidth);
+    const sectionX = Math.round((exportWidth - sectionWidth) / 2);
     const sectionY = patternY + patternCanvas.height + EXPORT_SECTION_GAP;
-    createRoundedRectPath(ctx, sectionX, sectionY, sectionWidth, statsSectionHeight, 24);
-    ctx.fillStyle = '#FAFAFA';
+    createRoundedRectPath(ctx, sectionX, sectionY, sectionWidth, statsSectionHeight, sectionRadius);
+    ctx.fillStyle = '#FCFCFC';
     ctx.fill();
     ctx.strokeStyle = '#E5E5E5';
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    const sectionInnerX = sectionX + 28;
-    const sectionInnerY = sectionY + 28;
+    const sectionInnerX = sectionX + statsCardPadding;
+    const sectionInnerY = sectionY + statsCardPadding;
     ctx.fillStyle = '#171717';
-    ctx.font = '600 28px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.font = `600 ${statsTitleFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
     ctx.fillText('Beads 用量统计', sectionInnerX, sectionInnerY);
 
+    const summaryBadgeX = sectionX + sectionWidth - statsCardPadding - summaryBadgeWidth;
+    const summaryBadgeY = sectionInnerY - 2;
+    createRoundedRectPath(ctx, summaryBadgeX, summaryBadgeY, summaryBadgeWidth, summaryBadgeHeight, summaryBadgeRadius);
+    ctx.fillStyle = '#171717';
+    ctx.fill();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = `600 ${statsTotalFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText(`总计 ${materialStats.totalBeads} 颗`, summaryBadgeX + summaryBadgeWidth / 2, summaryBadgeY + Math.round(8 * legendScale));
+
     ctx.fillStyle = '#525252';
-    ctx.font = '400 16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-    ctx.fillText(`颜色按用量从高到低排序`, sectionInnerX, sectionInnerY + 38);
+    ctx.font = `400 ${statsBodyFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.fillText('色号按用量从高到低排列，便于直接对照备料。', sectionInnerX, sectionInnerY + Math.round(40 * legendScale));
 
     const listTop = sectionInnerY + statsHeaderHeight;
-    const columnWidth = (sectionWidth - 56 - (statsColumns - 1) * EXPORT_COLUMN_GAP) / statsColumns;
-    const swatchSize = 18;
+    const swatchSize = Math.round(24 * legendScale);
+    const countBadgeWidth = Math.round(74 * legendScale);
+    const countBadgeHeight = Math.round(30 * legendScale);
+    const countBadgeRadius = Math.round(10 * legendScale);
 
     materialStats.materials.forEach((item, index) => {
         const columnIndex = Math.floor(index / itemsPerColumn);
         const rowIndex = index % itemsPerColumn;
-        const columnX = sectionInnerX + columnIndex * (columnWidth + EXPORT_COLUMN_GAP);
-        const rowY = listTop + rowIndex * EXPORT_ROW_HEIGHT;
+        const columnX = sectionInnerX + columnIndex * (scaledColumnWidth + scaledColumnGap);
+        const rowY = listTop + rowIndex * scaledRowHeight;
         const textY = rowY + 2;
         const countLabel = `${item.count} 颗`;
 
-        ctx.strokeStyle = '#E5E5E5';
+        ctx.strokeStyle = '#ECECEC';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(columnX, rowY + EXPORT_ROW_HEIGHT - 6);
-        ctx.lineTo(columnX + columnWidth, rowY + EXPORT_ROW_HEIGHT - 6);
+        ctx.moveTo(columnX, rowY + scaledRowHeight - Math.round(6 * legendScale));
+        ctx.lineTo(columnX + scaledColumnWidth, rowY + scaledRowHeight - Math.round(6 * legendScale));
         ctx.stroke();
 
         ctx.fillStyle = item.color.hex;
-        createRoundedRectPath(ctx, columnX, rowY + 6, swatchSize, swatchSize, 5);
+        createRoundedRectPath(ctx, columnX, rowY + Math.round(8 * legendScale), swatchSize, swatchSize, Math.round(6 * legendScale));
         ctx.fill();
         ctx.strokeStyle = '#D4D4D4';
         ctx.lineWidth = 1;
         ctx.stroke();
 
+        const countBadgeX = columnX + scaledColumnWidth - countBadgeWidth;
+        createRoundedRectPath(ctx, countBadgeX, rowY + Math.round(4 * legendScale), countBadgeWidth, countBadgeHeight, countBadgeRadius);
+        ctx.fillStyle = '#F3F4F6';
+        ctx.fill();
+        ctx.strokeStyle = '#E5E7EB';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
         ctx.fillStyle = '#171717';
-        ctx.font = '600 16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        ctx.font = `600 ${statsItemFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
         ctx.textAlign = 'left';
-        ctx.fillText(item.color.name, columnX + 30, textY);
+        ctx.fillText(item.color.name, columnX + swatchSize + Math.round(12 * legendScale), textY + 1);
 
         ctx.fillStyle = '#737373';
-        ctx.font = '400 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-        ctx.fillText(item.color.hex.toUpperCase(), columnX + 30, textY + 20);
+        ctx.font = `500 ${statsHexFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+        ctx.fillText(item.color.hex.toUpperCase(), columnX + swatchSize + Math.round(12 * legendScale), textY + Math.round(24 * legendScale));
 
         ctx.fillStyle = '#171717';
-        ctx.font = '600 16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-        ctx.textAlign = 'right';
-        ctx.fillText(countLabel, columnX + columnWidth, textY + 10);
+        ctx.font = `600 ${statsCountFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillText(countLabel, countBadgeX + countBadgeWidth / 2, rowY + Math.round(10 * legendScale));
     });
 
     ctx.textAlign = 'left';
