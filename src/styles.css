@@ -17,6 +17,8 @@
     --gray-800: #262626;
     --gray-900: #171717;
     --black: #000000;
+    --app-viewport-height: 100vh;
+    --app-header-height: 62px;
 }
 
 .sr-only {
@@ -47,6 +49,7 @@ body {
     display: flex;
     flex-direction: column;
     min-height: 100vh;
+    min-height: var(--app-viewport-height);
 }
 
 header {
@@ -146,14 +149,16 @@ header h1 {
 .main-content {
     display: flex;
     position: relative;
-    min-height: calc(100vh - 62px);
+    min-height: calc(var(--app-viewport-height) - var(--app-header-height));
+    height: calc(var(--app-viewport-height) - var(--app-header-height));
+    max-height: calc(var(--app-viewport-height) - var(--app-header-height));
+    overflow: hidden;
 }
 
 /* 移动端流式布局 */
 @media (max-width: 767px) {
     .main-content {
         flex-direction: column;
-        min-height: auto;
     }
 }
 
@@ -447,6 +452,8 @@ header h1 {
 }
 
 .seo-content {
+    min-height: 100vh;
+    min-height: var(--app-viewport-height);
     padding: 24px 24px 40px;
     background: var(--gray-50);
     border: 0;
@@ -888,6 +895,8 @@ section h2 {
     background: var(--white);
     display: flex;
     flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
 }
 
 /* PC端和iPad固定布局 */
@@ -907,6 +916,7 @@ section h2 {
 
 .empty-state {
     flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -941,6 +951,7 @@ section h2 {
 #patternContainer {
     display: flex;
     flex-direction: column;
+    min-height: 0;
 }
 
 /* PC端和iPad固定布局 */
@@ -955,7 +966,8 @@ section h2 {
 /* 移动端流式布局 */
 @media (max-width: 767px) {
     #patternContainer {
-        min-height: 60vh;
+        flex: 1;
+        min-height: 0;
     }
 }
 
@@ -1420,14 +1432,25 @@ section h2 {
     justify-content: flex-start;
     background: var(--gray-50);
     position: relative;
+    overflow: auto;
+    overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+}
+
+.pattern-canvas-wrapper.pan-ready,
+.pattern-canvas-wrapper.pan-ready #patternCanvas {
+    cursor: grab;
+}
+
+.pattern-canvas-wrapper.is-panning,
+.pattern-canvas-wrapper.is-panning #patternCanvas {
+    cursor: grabbing;
 }
 
 /* PC端和iPad固定布局 */
 @media (min-width: 768px) {
     .pattern-canvas-wrapper {
         flex: 1;
-        overflow: auto;
         min-height: 0;
     }
 }
@@ -1436,7 +1459,6 @@ section h2 {
 @media (max-width: 767px) {
     .pattern-canvas-wrapper {
         min-height: 50vh;
-        overflow-x: auto;
     }
 }
 
@@ -2128,7 +2150,10 @@ section h2 {
         border-bottom: 1px solid var(--gray-200);
         padding: 16px;
         transition: max-height 0.3s ease, padding 0.3s ease, border 0.3s ease, opacity 0.3s ease;
-        overflow: hidden;
+        overflow-y: auto;
+        overflow-x: hidden;
+        max-height: min(42vh, 420px);
+        flex: 0 0 auto;
     }
 
     .control-panel-footer {
@@ -2255,6 +2280,11 @@ section h2 {
         padding: 8px;
     }
 
+    .result-panel {
+        flex: 1;
+        min-height: 0;
+    }
+
     /* 手机抽屉从底部滑出 */
     .drawer-content {
         right: auto;
@@ -2294,6 +2324,7 @@ section h2 {
     }
 
     .seo-content {
+        min-height: auto;
         padding: 24px 16px 36px;
     }
 

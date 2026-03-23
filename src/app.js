@@ -97,6 +97,7 @@ const clearSelectionBtn = document.getElementById('clearSelectionBtn');
 const undoEditBtn = document.getElementById('undoEditBtn');
 const resetEditsBtn = document.getElementById('resetEditsBtn');
 const patternCanvasWrapper = document.querySelector('.pattern-canvas-wrapper');
+const appHeader = document.querySelector('header');
 
 const customColorPicker = document.getElementById('customColorPicker');
 const colorGrid = document.getElementById('colorGrid');
@@ -125,12 +126,14 @@ let removedColorCodes = new Set();
 let selectedCells = new Set();
 let selectionDrag = null;
 let pointerSelectionState = null;
+let patternPanState = null;
 let manualEditHistory = [];
 let originalPatternPixels = [];
 const MAX_EDIT_HISTORY = 30;
 let selectedReplacementColorCode = '';
 let imageCropRect = null;
 let cropPointerState = null;
+let isSpacePanKeyPressed = false;
 const MIN_CROP_SELECTION_DISPLAY_SIZE = 12;
 const FEEDBACK_ENTRY_FADE_DELAY = 10000;
 const CUSDIS_INIT_POLL_INTERVAL = 250;
@@ -173,6 +176,13 @@ function scheduleFeedbackEntryFade() {
     feedbackEntryFadeTimeout = window.setTimeout(function() {
         setFeedbackEntryFaded(true);
     }, FEEDBACK_ENTRY_FADE_DELAY);
+}
+
+function updateAppViewportLayout() {
+    const viewportHeight = window.visualViewport?.height || window.innerHeight;
+    const headerHeight = appHeader?.offsetHeight || 62;
+    document.documentElement.style.setProperty('--app-viewport-height', `${Math.round(viewportHeight)}px`);
+    document.documentElement.style.setProperty('--app-header-height', `${Math.round(headerHeight)}px`);
 }
 
 function setFeedbackCommentsLoading(isLoading) {
@@ -554,6 +564,7 @@ function finishCropSelection(event) {
 
 async function initialize() {
     await colorSchemeManager.loadMardColors();
+    updateAppViewportLayout();
     currentPatternStrategyId = patternStrategySelect.value || DEFAULT_PATTERN_STRATEGY;
 
     const savedCustomColors = customColorManager.getColors();
@@ -588,6 +599,7 @@ async function initialize() {
     updateReplaceColorOptions();
     updateEditSelectionSummary();
     updateCropStatus();
+    updatePatternPanState();
     scheduleFeedbackEntryFade();
     announceStatus('工具已就绪，请上传图片并生成拼豆图纸。');
 
@@ -814,6 +826,7 @@ function clearSelectionState({ redraw = true } = {}) {
     selectionDrag = null;
     pointerSelectionState = null;
     patternCanvas.classList.remove('selection-mode');
+    updatePatternPanState();
     coordinateInfo.classList.remove('is-visible');
     coordinateInfo.setAttribute('aria-hidden', 'true');
     resetColorAssistModes();
@@ -1793,6 +1806,8 @@ function drawPattern(data, width, height) {
         ctx.fillRect(drawX, drawY, selectionWidth, selectionHeight);
         ctx.restore();
     }
+
+    updatePatternPanState();
 }
 
 function getColumnLabel(index) {
@@ -2205,6 +2220,89 @@ function getGridCoordinatesFromPointerEvent(event) {
     return { x: gridX, y: gridY };
 }
 
+function isTypingTarget(target) {
+    return target instanceof HTMLElement && (
+        target.isContentEditable ||
+        ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName)
+    );
+}
+
+function canPanPattern() {
+    if (!patternData || !patternCanvasWrapper || zoomScale <= 1) {
+        return false;
+    }
+
+    return patternCanvasWrapper.scrollWidth > patternCanvasWrapper.clientWidth + 1 ||
+        patternCanvasWrapper.scrollHeight > patternCanvasWrapper.clientHeight + 1;
+}
+
+function updatePatternPanState() {
+    if (!patternCanvasWrapper) {
+        return;
+    }
+
+    const panEnabled = canPanPattern();
+    const panReady = panEnabled && isSpacePanKeyPressed && !patternPanState && !pointerSelectionState;
+
+    patternCanvasWrapper.classList.toggle('pan-enabled', panEnabled);
+    patternCanvasWrapper.classList.toggle('pan-ready', panReady);
+    patternCanvasWrapper.classList.toggle('is-panning', Boolean(patternPanState));
+}
+
+function shouldStartPatternPan(event) {
+    return event.button === 0 &&
+        isSpacePanKeyPressed &&
+        canPanPattern() &&
+        !pointerSelectionState &&
+        !selectionDrag;
+}
+
+function handlePatternPanPointerDown(event) {
+    if (!shouldStartPatternPan(event)) {
+        return false;
+    }
+
+    patternPanState = {
+        pointerId: event.pointerId,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startScrollLeft: patternCanvasWrapper.scrollLeft,
+        startScrollTop: patternCanvasWrapper.scrollTop
+    };
+
+    patternCanvasWrapper.setPointerCapture?.(event.pointerId);
+    updatePatternPanState();
+    event.preventDefault();
+    return true;
+}
+
+function handlePatternPanPointerMove(event) {
+    if (!patternPanState || event.pointerId !== patternPanState.pointerId) {
+        return;
+    }
+
+    const deltaX = event.clientX - patternPanState.startClientX;
+    const deltaY = event.clientY - patternPanState.startClientY;
+    patternCanvasWrapper.scrollLeft = patternPanState.startScrollLeft - deltaX;
+    patternCanvasWrapper.scrollTop = patternPanState.startScrollTop - deltaY;
+    event.preventDefault();
+}
+
+function finishPatternPan(event) {
+    if (!patternPanState || (event && event.pointerId !== patternPanState.pointerId)) {
+        return;
+    }
+
+    try {
+        patternCanvasWrapper.releasePointerCapture?.(patternPanState.pointerId);
+    } catch (error) {
+        console.debug('releasePointerCapture skipped:', error);
+    }
+
+    patternPanState = null;
+    updatePatternPanState();
+}
+
 function setPrimarySelection(x, y, { append = false, announce = true } = {}) {
     if (!patternData) {
         return;
@@ -2418,6 +2516,11 @@ function handleCanvasPointerDown(event) {
         return;
     }
 
+    if (shouldStartPatternPan(event)) {
+        event.preventDefault();
+        return;
+    }
+
     const cell = getGridCoordinatesFromPointerEvent(event);
     if (!cell) {
         return;
@@ -2557,6 +2660,10 @@ patternCanvas.addEventListener('pointermove', handleCanvasPointerMove);
 patternCanvas.addEventListener('pointerup', finishCanvasPointerSelection);
 patternCanvas.addEventListener('pointercancel', finishCanvasPointerSelection);
 patternCanvasWrapper.addEventListener('pointerdown', function(event) {
+    if (handlePatternPanPointerDown(event)) {
+        return;
+    }
+
     if (event.target !== patternCanvasWrapper || !patternData || selectedCells.size === 0) {
         return;
     }
@@ -2564,6 +2671,9 @@ patternCanvasWrapper.addEventListener('pointerdown', function(event) {
     clearSelectionState();
     announceStatus('已清空当前选区。');
 });
+patternCanvasWrapper.addEventListener('pointermove', handlePatternPanPointerMove);
+patternCanvasWrapper.addEventListener('pointerup', finishPatternPan);
+patternCanvasWrapper.addEventListener('pointercancel', finishPatternPan);
 
 // 更新坐标信息显示
 function updateCoordinateInfo({ announce = true } = {}) {
@@ -2719,13 +2829,18 @@ let resizeTimeout;
 window.addEventListener('resize', function() {
     clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(function() {
+        updateAppViewportLayout();
         updateTogglePanelButton();
         renderCropSelection();
         if (patternData) {
             drawPattern(patternData, patternData.width, patternData.height);
+        } else {
+            updatePatternPanState();
         }
     }, 250);
 });
+
+window.visualViewport?.addEventListener('resize', updateAppViewportLayout);
 
 downloadBtn.addEventListener('click', function() {
     const exportCanvas = createExportCanvas();
@@ -2897,6 +3012,15 @@ confirmColorSelectionBtn.addEventListener('click', function() {
 });
 
 document.addEventListener('keydown', function(e) {
+    if (e.code === 'Space' && !isTypingTarget(e.target)) {
+        isSpacePanKeyPressed = true;
+        updatePatternPanState();
+
+        if (canPanPattern()) {
+            e.preventDefault();
+        }
+    }
+
     if (e.key === 'Escape') {
         if (!replaceColorPanel.hidden) {
             closeReplaceColorPanel();
@@ -2908,6 +3032,21 @@ document.addEventListener('keydown', function(e) {
             closeDrawer();
         }
     }
+});
+
+document.addEventListener('keyup', function(e) {
+    if (e.code !== 'Space') {
+        return;
+    }
+
+    isSpacePanKeyPressed = false;
+    updatePatternPanState();
+});
+
+window.addEventListener('blur', function() {
+    isSpacePanKeyPressed = false;
+    finishPatternPan();
+    updatePatternPanState();
 });
 
 initialize();
