@@ -121,4 +121,4 @@ export const PATTERN_STRATEGIES = {
     }
 };
 
-export const DEFAULT_PATTERN_STRATEGY = 'smart_default';
+export const DEFAULT_PATTERN_STRATEGY = 'cartoon';

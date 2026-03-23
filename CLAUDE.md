@@ -46,7 +46,7 @@ CustomColorManager {
 - ❌ 不要引入Perler/Hama或其他配色方案
 
 **当前默认值**：
-- 默认颜色预设：`complete_100`
+- 默认颜色预设：`all_colors`
 - 默认尺寸：`52 x 52`
 - 保持比例时：上传图片后按“最短边52”自动推算另一边，最长边仍受100上限约束
 
@@ -63,10 +63,13 @@ PATTERN_STRATEGIES = {
 ```
 
 **已落地策略**：
-- `smart_default`：默认通用模式，平衡统一性和层次
+- `smart_default`：通用模式，平衡统一性和层次
 - `cartoon`：偏向大色块统一和去杂点
 - `portrait`：偏向保留肤色层次与五官
 - `icon`：偏向保留硬边和像素感
+
+**默认策略**：
+- `cartoon`
 
 **量化管线**：
 1. 根据策略选择缩放方式（smooth / pixelated）
