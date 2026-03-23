@@ -136,6 +136,13 @@ const FEEDBACK_ENTRY_FADE_DELAY = 10000;
 const CUSDIS_INIT_POLL_INTERVAL = 250;
 const CUSDIS_INIT_MAX_ATTEMPTS = 80;
 const CUSDIS_LOAD_FALLBACK_DELAY = 1500;
+const EXPORT_PADDING = 48;
+const EXPORT_SECTION_GAP = 32;
+const EXPORT_MIN_WIDTH = 1280;
+const EXPORT_MAX_STATS_COLUMNS = 4;
+const EXPORT_COLUMN_WIDTH = 240;
+const EXPORT_COLUMN_GAP = 24;
+const EXPORT_ROW_HEIGHT = 42;
 let feedbackEntryFadeTimeout = null;
 let feedbackCommentsInitPoll = null;
 let feedbackCommentsLoadFallback = null;
@@ -1806,6 +1813,191 @@ function isColorDark(rgb) {
     return brightness < 128;
 }
 
+function getMaterialStats(data) {
+    if (!data) {
+        return {
+            materials: [],
+            totalBeads: 0
+        };
+    }
+
+    const paletteByName = new Map(data.palette.map(color => [color.name, color]));
+    const colorCounts = new Map();
+
+    data.pixels.forEach(color => {
+        colorCounts.set(color.name, (colorCounts.get(color.name) || 0) + 1);
+    });
+
+    const materials = Array.from(colorCounts.entries())
+        .map(([colorName, count]) => {
+            const color = paletteByName.get(colorName);
+            if (!color) {
+                return null;
+            }
+
+            return {
+                color,
+                count,
+                isLowUsage: count <= 9
+            };
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.count - a.count);
+
+    const totalBeads = materials.reduce((sum, item) => sum + item.count, 0);
+
+    return {
+        materials,
+        totalBeads
+    };
+}
+
+function getSelectedOptionLabel(selectElement) {
+    return selectElement?.selectedOptions?.[0]?.textContent?.trim() || '';
+}
+
+function createRoundedRectPath(ctx, x, y, width, height, radius) {
+    const safeRadius = Math.min(radius, width / 2, height / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + safeRadius, y);
+    ctx.arcTo(x + width, y, x + width, y + height, safeRadius);
+    ctx.arcTo(x + width, y + height, x, y + height, safeRadius);
+    ctx.arcTo(x, y + height, x, y, safeRadius);
+    ctx.arcTo(x, y, x + width, y, safeRadius);
+    ctx.closePath();
+}
+
+function createExportCanvas() {
+    if (!patternData || !patternCanvas || patternCanvas.width <= 0 || patternCanvas.height <= 0) {
+        return null;
+    }
+
+    const materialStats = getMaterialStats(patternData);
+    const title = 'Pixel to Beads 图纸导出';
+    const summaryLine = `图纸尺寸 ${patternData.width} × ${patternData.height} · 共 ${materialStats.totalBeads} 颗 · 使用 ${materialStats.materials.length} 色`;
+    const detailLine = `颜色模板 ${getSelectedOptionLabel(colorPresetSelect) || '未命名'} · 图像策略 ${getSelectedOptionLabel(patternStrategySelect) || '默认'}`;
+
+    let exportWidth = Math.max(patternCanvas.width + EXPORT_PADDING * 2, EXPORT_MIN_WIDTH);
+    const preferredColumns = Math.min(
+        EXPORT_MAX_STATS_COLUMNS,
+        Math.max(1, Math.ceil(materialStats.materials.length / 14))
+    );
+    const preferredStatsWidth = EXPORT_PADDING * 2 +
+        preferredColumns * EXPORT_COLUMN_WIDTH +
+        (preferredColumns - 1) * EXPORT_COLUMN_GAP +
+        56;
+    exportWidth = Math.max(exportWidth, preferredStatsWidth);
+
+    const sectionWidth = exportWidth - EXPORT_PADDING * 2;
+    const availableStatsWidth = sectionWidth - 56;
+    const statsColumns = Math.min(
+        EXPORT_MAX_STATS_COLUMNS,
+        Math.max(1, Math.floor((availableStatsWidth + EXPORT_COLUMN_GAP) / (EXPORT_COLUMN_WIDTH + EXPORT_COLUMN_GAP)))
+    );
+    const itemsPerColumn = Math.max(1, Math.ceil(Math.max(1, materialStats.materials.length) / statsColumns));
+    const statsHeaderHeight = 74;
+    const statsSectionHeight = 28 * 2 + statsHeaderHeight + itemsPerColumn * EXPORT_ROW_HEIGHT;
+    const headerHeight = 96;
+    const exportHeight = EXPORT_PADDING +
+        headerHeight +
+        patternCanvas.height +
+        EXPORT_SECTION_GAP +
+        statsSectionHeight +
+        EXPORT_PADDING;
+
+    const exportCanvas = document.createElement('canvas');
+    exportCanvas.width = exportWidth;
+    exportCanvas.height = exportHeight;
+
+    const ctx = exportCanvas.getContext('2d');
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, exportWidth, exportHeight);
+
+    ctx.fillStyle = '#171717';
+    ctx.font = '600 36px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(title, EXPORT_PADDING, EXPORT_PADDING);
+
+    ctx.fillStyle = '#404040';
+    ctx.font = '500 18px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.fillText(summaryLine, EXPORT_PADDING, EXPORT_PADDING + 48);
+
+    ctx.fillStyle = '#737373';
+    ctx.font = '400 16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.fillText(detailLine, EXPORT_PADDING, EXPORT_PADDING + 76);
+
+    const patternX = Math.round((exportWidth - patternCanvas.width) / 2);
+    const patternY = EXPORT_PADDING + headerHeight;
+    ctx.drawImage(patternCanvas, patternX, patternY);
+    ctx.strokeStyle = '#E5E5E5';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(patternX, patternY, patternCanvas.width, patternCanvas.height);
+
+    const sectionX = EXPORT_PADDING;
+    const sectionY = patternY + patternCanvas.height + EXPORT_SECTION_GAP;
+    createRoundedRectPath(ctx, sectionX, sectionY, sectionWidth, statsSectionHeight, 24);
+    ctx.fillStyle = '#FAFAFA';
+    ctx.fill();
+    ctx.strokeStyle = '#E5E5E5';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    const sectionInnerX = sectionX + 28;
+    const sectionInnerY = sectionY + 28;
+    ctx.fillStyle = '#171717';
+    ctx.font = '600 28px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.fillText('Beads 用量统计', sectionInnerX, sectionInnerY);
+
+    ctx.fillStyle = '#525252';
+    ctx.font = '400 16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.fillText(`颜色按用量从高到低排序`, sectionInnerX, sectionInnerY + 38);
+
+    const listTop = sectionInnerY + statsHeaderHeight;
+    const columnWidth = (sectionWidth - 56 - (statsColumns - 1) * EXPORT_COLUMN_GAP) / statsColumns;
+    const swatchSize = 18;
+
+    materialStats.materials.forEach((item, index) => {
+        const columnIndex = Math.floor(index / itemsPerColumn);
+        const rowIndex = index % itemsPerColumn;
+        const columnX = sectionInnerX + columnIndex * (columnWidth + EXPORT_COLUMN_GAP);
+        const rowY = listTop + rowIndex * EXPORT_ROW_HEIGHT;
+        const textY = rowY + 2;
+        const countLabel = `${item.count} 颗`;
+
+        ctx.strokeStyle = '#E5E5E5';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(columnX, rowY + EXPORT_ROW_HEIGHT - 6);
+        ctx.lineTo(columnX + columnWidth, rowY + EXPORT_ROW_HEIGHT - 6);
+        ctx.stroke();
+
+        ctx.fillStyle = item.color.hex;
+        createRoundedRectPath(ctx, columnX, rowY + 6, swatchSize, swatchSize, 5);
+        ctx.fill();
+        ctx.strokeStyle = '#D4D4D4';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.fillStyle = '#171717';
+        ctx.font = '600 16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(item.color.name, columnX + 30, textY);
+
+        ctx.fillStyle = '#737373';
+        ctx.font = '400 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        ctx.fillText(item.color.hex.toUpperCase(), columnX + 30, textY + 20);
+
+        ctx.fillStyle = '#171717';
+        ctx.font = '600 16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(countLabel, columnX + columnWidth, textY + 10);
+    });
+
+    ctx.textAlign = 'left';
+    return exportCanvas;
+}
+
 function updateMaterialActionState() {
     if (removedColorCodes.size > 0) {
         resetRemovedColorsBtn.style.display = 'inline-flex';
@@ -1821,29 +2013,15 @@ function updateMaterialActionState() {
 
 function generateMaterialsList(data, options = {}) {
     const { preserveCounts = false } = options;
-    const colorCounts = {};
+    const materialStats = getMaterialStats(data);
     const activeColors = getAvailableBeadColors();
     const canReplaceMoreColors = activeColors.length > 1;
 
-    data.pixels.forEach(color => {
-        colorCounts[color.name] = (colorCounts[color.name] || 0) + 1;
-    });
-
-    const sortedColors = Object.entries(colorCounts)
-        .sort((a, b) => b[1] - a[1]);
-
     materialsList.innerHTML = '';
-    let totalBeads = 0;
 
-    sortedColors.forEach(([colorName, count]) => {
-        const color = data.palette.find(c => c.name === colorName);
-        if (!color) return;
-
-        totalBeads += count;
-
+    materialStats.materials.forEach(({ color, count, isLowUsage }) => {
         const item = document.createElement('div');
         item.className = 'material-item';
-        const isLowUsage = count <= 9;
         item.innerHTML = `
             <div class="material-main">
                 <div class="color-swatch" style="background-color: ${color.hex}"></div>
@@ -1872,7 +2050,7 @@ function generateMaterialsList(data, options = {}) {
         materialsList.appendChild(item);
     });
 
-    totalBeadsSpan.textContent = totalBeads;
+    totalBeadsSpan.textContent = materialStats.totalBeads;
     updateMaterialActionState();
 
     if (!preserveCounts) {
@@ -2550,11 +2728,14 @@ window.addEventListener('resize', function() {
 });
 
 downloadBtn.addEventListener('click', function() {
-    if (!patternCanvas) return;
+    const exportCanvas = createExportCanvas();
+    if (!exportCanvas) {
+        return;
+    }
 
     const link = document.createElement('a');
     link.download = 'bead-pattern.png';
-    link.href = patternCanvas.toDataURL('image/png');
+    link.href = exportCanvas.toDataURL('image/png');
     link.click();
 });
 
