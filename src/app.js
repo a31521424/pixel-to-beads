@@ -73,6 +73,7 @@ const feedbackModal = document.getElementById('feedbackModal');
 const feedbackModalOverlay = document.getElementById('feedbackModalOverlay');
 const closeFeedbackModalBtn = document.getElementById('closeFeedbackModal');
 const feedbackCommentsMount = document.getElementById('feedbackCommentsMount');
+const cusdisThread = document.getElementById('cusdis_thread');
 
 const coordinateInfo = document.getElementById('coordinateInfo');
 const currentCoordinate = document.getElementById('currentCoordinate');
@@ -132,9 +133,12 @@ let imageCropRect = null;
 let cropPointerState = null;
 const MIN_CROP_SELECTION_DISPLAY_SIZE = 12;
 const FEEDBACK_ENTRY_FADE_DELAY = 10000;
-const HYVOR_WEBSITE_ID = '15152';
-const HYVOR_PAGE_ID = 'pixel-to-beads-home';
+const CUSDIS_INIT_POLL_INTERVAL = 250;
+const CUSDIS_INIT_MAX_ATTEMPTS = 80;
+const CUSDIS_LOAD_FALLBACK_DELAY = 1500;
 let feedbackEntryFadeTimeout = null;
+let feedbackCommentsInitPoll = null;
+let feedbackCommentsLoadFallback = null;
 let feedbackCommentsInitialized = false;
 let feedbackLastFocusedElement = null;
 
@@ -164,28 +168,79 @@ function scheduleFeedbackEntryFade() {
     }, FEEDBACK_ENTRY_FADE_DELAY);
 }
 
+function setFeedbackCommentsLoading(isLoading) {
+    feedbackCommentsMount?.setAttribute('data-loading', isLoading ? 'true' : 'false');
+}
+
+function markFeedbackCommentsLoaded() {
+    clearTimeout(feedbackCommentsLoadFallback);
+    feedbackCommentsLoadFallback = null;
+    setFeedbackCommentsLoading(false);
+}
+
+function bindCusdisIframeLoad() {
+    const iframeElement = cusdisThread?.querySelector('iframe');
+    if (!iframeElement) {
+        return false;
+    }
+
+    if (iframeElement.dataset.feedbackLoadBound === 'true') {
+        return true;
+    }
+
+    iframeElement.dataset.feedbackLoadBound = 'true';
+    iframeElement.addEventListener('load', markFeedbackCommentsLoaded, { once: true });
+    clearTimeout(feedbackCommentsLoadFallback);
+    feedbackCommentsLoadFallback = window.setTimeout(markFeedbackCommentsLoaded, CUSDIS_LOAD_FALLBACK_DELAY);
+    return true;
+}
+
+function initializeCusdisComments() {
+    if (!cusdisThread || typeof window.CUSDIS?.renderTo !== 'function') {
+        return false;
+    }
+
+    window.CUSDIS.renderTo(cusdisThread);
+    requestAnimationFrame(function() {
+        if (bindCusdisIframeLoad()) {
+            return;
+        }
+
+        window.setTimeout(bindCusdisIframeLoad, 100);
+    });
+    return true;
+}
+
 function renderFeedbackCommentsIfNeeded() {
-    if (!feedbackCommentsMount || feedbackCommentsInitialized) {
+    if (!feedbackCommentsMount || !cusdisThread || feedbackCommentsInitialized) {
         return;
     }
 
-    const commentsElement = document.createElement('hyvor-talk-comments');
-    commentsElement.setAttribute('website-id', HYVOR_WEBSITE_ID);
-    commentsElement.setAttribute('page-id', HYVOR_PAGE_ID);
-
-    feedbackCommentsMount.innerHTML = '';
-    feedbackCommentsMount.appendChild(commentsElement);
-    feedbackCommentsMount.setAttribute('data-loading', 'true');
+    setFeedbackCommentsLoading(true);
     feedbackCommentsInitialized = true;
 
-    if (window.customElements?.get('hyvor-talk-comments')) {
-        feedbackCommentsMount.setAttribute('data-loading', 'false');
+    if (initializeCusdisComments()) {
         return;
     }
 
-    window.customElements?.whenDefined('hyvor-talk-comments').then(function() {
-        feedbackCommentsMount?.setAttribute('data-loading', 'false');
-    });
+    clearInterval(feedbackCommentsInitPoll);
+    let attempts = 0;
+    feedbackCommentsInitPoll = window.setInterval(function() {
+        attempts += 1;
+
+        if (initializeCusdisComments()) {
+            clearInterval(feedbackCommentsInitPoll);
+            feedbackCommentsInitPoll = null;
+            return;
+        }
+
+        if (attempts >= CUSDIS_INIT_MAX_ATTEMPTS) {
+            clearInterval(feedbackCommentsInitPoll);
+            feedbackCommentsInitPoll = null;
+            markFeedbackCommentsLoaded();
+            announceStatus('留言板加载失败，请稍后重试。');
+        }
+    }, CUSDIS_INIT_POLL_INTERVAL);
 }
 
 function openFeedbackModal() {

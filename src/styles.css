@@ -349,23 +349,61 @@ header h1 {
 }
 
 .feedback-comments-mount {
-    min-height: min(72vh, 760px);
-    padding: 18px;
-}
-
-.feedback-comments-mount[data-loading="true"] {
-    display: grid;
-    place-items: center;
+    position: relative;
+    padding: 22px;
 }
 
 .feedback-comments-loading {
+    position: absolute;
+    inset: 22px;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    margin: 0;
     color: var(--gray-500);
     font-size: 0.9rem;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.84) 0%, rgba(249, 250, 251, 0.92) 100%);
+    border: 1px dashed var(--gray-300);
+    border-radius: 16px;
+    backdrop-filter: blur(6px);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
 }
 
-.feedback-comments-mount hyvor-talk-comments {
+.feedback-comments-mount[data-loading="true"] .feedback-comments-loading {
+    opacity: 1;
+    visibility: visible;
+}
+
+.feedback-comments-surface {
     display: block;
     width: 100%;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0;
+    min-height: min(72vh, 760px);
+    box-sizing: border-box;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    overflow: visible;
+    box-shadow: none;
+}
+
+.feedback-comments-mount[data-loading="true"] .feedback-comments-surface {
+    opacity: 0.45;
+}
+
+.feedback-comments-surface iframe {
+    display: block;
+    width: 100%;
+    min-height: min(72vh, 760px);
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
 }
 
 @media (max-width: 767px) {
@@ -393,8 +431,18 @@ header h1 {
     }
 
     .feedback-comments-mount {
-        min-height: 62vh;
         padding: 12px;
+    }
+
+    .feedback-comments-loading {
+        inset: 12px;
+        border-radius: 14px;
+    }
+
+    .feedback-comments-surface,
+    .feedback-comments-surface iframe {
+        min-height: 62vh;
+        border-radius: 0;
     }
 }
 
