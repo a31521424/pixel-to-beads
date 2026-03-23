@@ -502,7 +502,7 @@ async function initialize() {
         presetDescription.textContent = `已选择 ${savedCustomColors.length} 种颜色`;
         editCustomColorsBtn.style.display = 'block';
     } else {
-        // 没有自定义颜色，使用HTML中设置的默认预设（all_colors）
+        // 没有自定义颜色，使用 HTML 中设置的默认预设
         const defaultPreset = colorPresetSelect.value;
         previousPreset = defaultPreset; // 记录默认预设
 

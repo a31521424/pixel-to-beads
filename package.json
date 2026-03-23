@@ -1,7 +1,7 @@
 {
   "name": "pixel-to-beads",
   "version": "2.0.0",
-  "description": "将任意图片转换为MARD拼豆手工图纸的纯前端工具 - 支持293色完整配色",
+  "description": "将任意图片转换为MARD拼豆手工图纸的纯前端工具 - 支持291色完整配色",
   "type": "module",
   "scripts": {
     "dev": "vite",

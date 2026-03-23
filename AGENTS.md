@@ -4,7 +4,7 @@
 本项目是基于 Vite 的纯前端应用。主要业务逻辑集中在 `src/`，其中 `src/app.js` 负责上传、生成、编辑和导出等主流程。配色、预设和渲染策略分别维护在 `src/colorSchemes.js`、`src/colorPresets.js`、`src/renderStrategies.js`。`src/mard-color.json` 是颜色数据源，`src/assets/` 存放资源文件，`public/` 存放公开静态文件，`dist/` 为构建产物目录。
 
 ## Bead Color System
-当前实现只支持 MARD 配色，不要引入 Perler、Hama 或其他品牌色表。颜色主表来自 `src/mard-color.json`，代码会在加载时为每个颜色补齐 `rgb`、`OKLab`、`chroma` 和 `lightness`，供最近色匹配和图像量化使用。仓库文档多处写“293 色”，但当前 `mard-color.json` 实际收录为 291 色；若补齐或调整色表，请同步更新说明。预设定义在 `src/colorPresets.js`，包含 `all_colors`、`basic_10`、`standard_20`、`advanced_30`、`professional_50`、`complete_100`，默认下拉选项是 `complete_100`。注意：部分预设名称与实际数组长度不完全一致，当前实现分别是 10、21、35、56、109 色；修改预设时应同时校正文案或保持这种兼容行为。自定义颜色通过 `localStorage` 的 `customBeadColors` 持久化，并通过颜色子集机制作用于整条生成链路。
+当前实现只支持 MARD 配色，不要引入 Perler、Hama 或其他品牌色表。颜色主表来自 `src/mard-color.json`，当前共 291 色；代码会在加载时为每个颜色补齐 `rgb`、`OKLab`、`chroma` 和 `lightness`，供最近色匹配和图像量化使用。预设定义在 `src/colorPresets.js`，包含 `all_colors`、`basic_10`、`standard_20`、`advanced_30`、`professional_50`、`complete_100`，默认下拉选项是 `complete_100`。当前预设数量与名称一致，分别为 10、20、30、50、100 色以及全量 291 色；修改预设时应同时更新页面文案和仓库说明。自定义颜色通过 `localStorage` 的 `customBeadColors` 持久化，并通过颜色子集机制作用于整条生成链路。
 
 ## Build, Test, and Development Commands
 - `npm install`：安装项目依赖。

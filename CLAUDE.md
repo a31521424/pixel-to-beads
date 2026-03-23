@@ -39,7 +39,7 @@ CustomColorManager {
 - 自定义模式通过`CustomColorManager`管理
 
 **重要规则**：
-- ✅ 只支持MARD配色（293色）
+- ✅ 只支持MARD配色（291色）
 - ✅ 颜色对象包含感知色差所需元数据：`{ name, code, hex, rgb, lab, chroma, lightness }`
 - ✅ `name`和`code`字段都是MARD编号（如A1、B5）
 - ✅ 自定义颜色通过localStorage永久保存
@@ -296,7 +296,7 @@ requestAnimationFrame(() => {
 - `/src/colorPresets.js`：颜色预设定义和自定义管理类
 - `/src/renderStrategies.js`：图像策略定义
 - `/src/styles.css`：全局样式、响应式布局
-- `/src/mard-color.json`：MARD 293色数据
+- `/src/mard-color.json`：MARD 291色数据
 - `/index.html`：入口页面、HTML结构
 
 ## 开发工作流
@@ -337,8 +337,8 @@ requestAnimationFrame(() => {
 
 ### v2.0.0（当前）
 **新增功能**：
-- ➕ 6种颜色预设模板系统（入门10色到全色系293色）
-- ➕ 自定义颜色选择功能（从293色中自由选择）
+- ➕ 6种颜色预设模板系统（入门10色到全色系291色）
+- ➕ 自定义颜色选择功能（从291色中自由选择）
 - ➕ localStorage持久化存储自定义颜色
 - ➕ 缩放功能（50%-300%，支持PC/iPad/移动端）
 - ➕ 坐标高亮和查看功能（点击珠子显示坐标和颜色）
@@ -361,7 +361,7 @@ requestAnimationFrame(() => {
 - 新增多个全局状态变量管理交互
 
 ### v1.0.0
-- ✅ 完整MARD配色支持（293色）
+- ✅ 完整MARD配色支持（291色）
 - ✅ 响应式设计（PC/iPad/手机）
 - ✅ 悬浮材料抽屉
 - ✅ 基础图纸生成和下载
