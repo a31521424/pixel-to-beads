@@ -22,6 +22,15 @@
 import { colorSchemeManager } from './colorSchemes.js';
 import { COLOR_PRESETS, customColorManager } from './colorPresets.js';
 import { DEFAULT_PATTERN_STRATEGY, PATTERN_STRATEGIES } from './renderStrategies.js';
+import { ColorIndex, bruteForceNearestRgb } from './colorIndex.js';
+import { applyDither } from './dithering.js';
+import {
+    FAMILY_IDS,
+    FAMILY_LABELS,
+    FAMILY_SWATCHES,
+    classifyColor,
+    groupByFamily
+} from './colorClassifier.js';
 
 let uploadedImage = null;
 let originalUploadedImage = null;
@@ -101,6 +110,7 @@ const appHeader = document.querySelector('header');
 
 const customColorPicker = document.getElementById('customColorPicker');
 const colorGrid = document.getElementById('colorGrid');
+const colorFamilyTabs = document.getElementById('colorFamilyTabs');
 const selectedColorCount = document.getElementById('selectedColorCount');
 const clearAllColorsBtn = document.getElementById('clearAllColors');
 const closeColorPickerBtn = document.getElementById('closeColorPicker');
@@ -120,8 +130,9 @@ const MAX_PATTERN_EDGE = 100;
 let selectedCell = null; // {x, y} 选中的格子坐标
 let highlightSameColor = false; // 是否高亮相同颜色
 let hideSameColor = false; // 是否隐藏相同颜色
-let previousPreset = 'all_colors'; // 记录打开自定义选择器前的预设
+let previousPreset = 'all_colors'; // Tracks last non-custom preset.
 let currentPatternStrategyId = DEFAULT_PATTERN_STRATEGY;
+let activeColorFamilyTab = 'all'; // Custom picker tab filter.
 let removedColorCodes = new Set();
 let selectedCells = new Set();
 let selectionDrag = null;
@@ -567,30 +578,27 @@ async function initialize() {
     await colorSchemeManager.loadMardColors();
     updateAppViewportLayout();
     currentPatternStrategyId = patternStrategySelect.value || DEFAULT_PATTERN_STRATEGY;
+    populatePresetDropdown();
 
     const savedCustomColors = customColorManager.getColors();
     if (savedCustomColors.length > 0) {
-        // 有自定义颜色，默认使用自定义配置
         colorPresetSelect.value = 'custom';
         colorSchemeManager.setColorSubset(savedCustomColors);
         presetDescription.textContent = `已选择 ${savedCustomColors.length} 种颜色`;
         editCustomColorsBtn.style.display = 'block';
     } else {
-        // 没有自定义颜色，使用 HTML 中设置的默认预设
-        const defaultPreset = colorPresetSelect.value;
-        previousPreset = defaultPreset; // 记录默认预设
-
-        if (defaultPreset && defaultPreset !== 'custom') {
-            const preset = COLOR_PRESETS[defaultPreset];
-            if (preset) {
-                if (preset.colors === null) {
-                    colorSchemeManager.clearColorSubset();
-                } else {
-                    colorSchemeManager.setColorSubset(preset.colors);
-                }
-                presetDescription.textContent = preset.description;
-            }
+        // No saved custom palette → fall back to the smart_default preset.
+        const defaultPreset = colorPresetSelect.value || 'smart_default_preset_fallback';
+        const preset = COLOR_PRESETS[defaultPreset] ?? COLOR_PRESETS.balanced_48;
+        const presetId = COLOR_PRESETS[defaultPreset] ? defaultPreset : 'balanced_48';
+        previousPreset = presetId;
+        colorPresetSelect.value = presetId;
+        if (preset.colors === null) {
+            colorSchemeManager.clearColorSubset();
+        } else {
+            colorSchemeManager.setColorSubset(preset.colors);
         }
+        presetDescription.textContent = preset.description;
         editCustomColorsBtn.style.display = 'none';
     }
 
@@ -1216,14 +1224,39 @@ function resizeImageHighQuality(img, targetWidth, targetHeight, strategy) {
 }
 
 function quantizeColors(sourcePixels, width, height, strategy, beadColors) {
-    let pixels = sourcePixels.map(pixel => findClosestBeadColor(pixel, beadColors, strategy));
+    // Build a fast index for the active palette. We can't rely on the manager
+    // index when removedColorCodes is non-empty, so always build per-call.
+    const useRgb = strategy.distanceMode === 'rgb';
+    const index = useRgb ? null : new ColorIndex(beadColors);
 
-    if (strategy.coherence.passes > 0) {
-        pixels = applySpatialCoherence(sourcePixels, pixels, width, height, strategy);
+    const lookup = useRgb
+        ? (lab, pixel) => bruteForceNearestRgb(pixel?.rgb ?? labToRgbApprox(lab), beadColors)
+        : (lab, pixel) => findBestBeadCandidate(lab, pixel, index, strategy);
+
+    const ditherStart = performance.now();
+    let pixels = applyDither(
+        strategy.dither.mode,
+        sourcePixels,
+        width,
+        height,
+        lookup,
+        strategy.dither.strength
+    );
+    const ditherTime = performance.now() - ditherStart;
+
+    // Coherence and despeckle only make sense without dither — they would
+    // otherwise smooth away the very noise pattern dithering creates.
+    if (strategy.dither.mode === 'none') {
+        if (strategy.coherence.passes > 0) {
+            pixels = applySpatialCoherence(sourcePixels, pixels, width, height, strategy);
+        }
+        if (strategy.despeckle.maxRegionSize > 0) {
+            pixels = despeckleRegions(sourcePixels, pixels, width, height, strategy);
+        }
     }
 
-    if (strategy.despeckle.maxRegionSize > 0) {
-        pixels = despeckleRegions(sourcePixels, pixels, width, height, strategy);
+    if (typeof console !== 'undefined') {
+        console.log(`量化完成: ${pixels.length} px, dither=${strategy.dither.mode}, ${ditherTime.toFixed(1)}ms`);
     }
 
     return {
@@ -1234,6 +1267,69 @@ function quantizeColors(sourcePixels, width, height, strategy, beadColors) {
         sourcePixels: sourcePixels,
         removedColorCodes: Array.from(removedColorCodes)
     };
+}
+
+// Top-K KD-Tree query + neutralBias re-scoring. K=6 is enough since the bias
+// tweak is small relative to OKLab distance and the true nearest is rarely
+// kicked out of the top six geometric matches.
+function findBestBeadCandidate(lab, pixel, index, strategy) {
+    const candidates = index.nearestK(lab, 6);
+    if (!strategy.neutralBias.enabled || !pixel) {
+        return candidates[0];
+    }
+
+    const isLowChromaHighlight = pixel.lab.L >= strategy.neutralBias.minLightness &&
+        pixel.chroma <= strategy.neutralBias.maxChroma;
+
+    if (!isLowChromaHighlight) {
+        return candidates[0];
+    }
+
+    let bestScore = Infinity;
+    let bestColor = candidates[0];
+    for (const cand of candidates) {
+        const score = scoreCandidate(pixel, cand, strategy.neutralBias, lab);
+        if (score < bestScore) {
+            bestScore = score;
+            bestColor = cand;
+        }
+    }
+    return bestColor;
+}
+
+function scoreCandidate(pixel, beadColor, neutralBias, queryLab) {
+    const dL = (queryLab.L - beadColor.lab.L) * 1.6;
+    const dA = queryLab.a - beadColor.lab.a;
+    const dB = queryLab.b - beadColor.lab.b;
+    let score = Math.sqrt(dL * dL + dA * dA + dB * dB);
+
+    score += Math.max(0, pixel.lab.L - beadColor.lightness) * neutralBias.darkPenalty;
+    score += Math.max(0, beadColor.lab.b - pixel.lab.b) * neutralBias.warmPenalty;
+    score += beadColor.chroma * neutralBias.chromaPenalty;
+    score -= beadColor.lightness * neutralBias.lightReward;
+    return score;
+}
+
+// Crude OKLab->RGB approximation, only used as a fallback when the dither
+// mutated lab and the strategy needs RGB-space lookup. Accuracy isn't
+// critical because RGB-mode strategies skip dithering altogether.
+function labToRgbApprox(lab) {
+    const lP = lab.L + 0.3963377774 * lab.a + 0.2158037573 * lab.b;
+    const mP = lab.L - 0.1055613458 * lab.a - 0.0638541728 * lab.b;
+    const sP = lab.L - 0.0894841775 * lab.a - 1.2914855480 * lab.b;
+    const lLin = lP * lP * lP;
+    const mLin = mP * mP * mP;
+    const sLin = sP * sP * sP;
+    const r = +4.0767416621 * lLin - 3.3077115913 * mLin + 0.2309699292 * sLin;
+    const g = -1.2684380046 * lLin + 2.6097574011 * mLin - 0.3413193965 * sLin;
+    const b = -0.0041960863 * lLin - 0.7034186147 * mLin + 1.7076147010 * sLin;
+    return [r, g, b].map(linearChannelToSrgb);
+}
+
+function linearChannelToSrgb(value) {
+    const v = Math.max(0, Math.min(1, value));
+    const channel = v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055;
+    return clampChannel(channel * 255);
 }
 
 function srgbChannelToLinear(value) {
@@ -1293,13 +1389,109 @@ function preprocessSourcePixels(imageData, width, height, strategy) {
         pixels.push(createPixelInfo(rgb, alpha));
     }
 
-    if (!strategy.smoothing.enabled) {
+    const mode = strategy.preprocess?.mode ?? (strategy.smoothing?.enabled ? 'legacy' : 'none');
+    if (mode === 'none') {
         return pixels;
     }
-
+    if (mode === 'bilateral') {
+        return bilateralFilterPixels(pixels, width, height, strategy.preprocess);
+    }
+    if (mode === 'gaussian') {
+        return gaussianFilterPixels(pixels, width, height, strategy.preprocess);
+    }
     return flattenLowVariancePixels(pixels, width, height, strategy.smoothing);
 }
 
+// Edge-preserving bilateral filter in OKLab space. Pixels in flat regions are
+// averaged together; pixels across edges (large range distance) keep their
+// original color. Replaces the old variance-thresholded mean filter, which
+// flipped a pixel either fully smooth or fully sharp.
+function bilateralFilterPixels(sourcePixels, width, height, params) {
+    const { radius = 1, sigmaSpatial = 1.4, sigmaRange = 0.05, strength = 0.5 } = params;
+    const result = new Array(sourcePixels.length);
+    const sigSpatial2 = 2 * sigmaSpatial * sigmaSpatial;
+    const sigRange2 = 2 * sigmaRange * sigmaRange;
+
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const index = y * width + x;
+            const center = sourcePixels[index];
+            let sumR = 0, sumG = 0, sumB = 0, sumW = 0;
+
+            for (let dy = -radius; dy <= radius; dy++) {
+                const ny = y + dy;
+                if (ny < 0 || ny >= height) continue;
+                for (let dx = -radius; dx <= radius; dx++) {
+                    const nx = x + dx;
+                    if (nx < 0 || nx >= width) continue;
+                    const ni = ny * width + nx;
+                    const neighbor = sourcePixels[ni];
+                    const spatial = (dx * dx + dy * dy) / sigSpatial2;
+                    const dL = neighbor.lab.L - center.lab.L;
+                    const da = neighbor.lab.a - center.lab.a;
+                    const db = neighbor.lab.b - center.lab.b;
+                    const range = (dL * dL + da * da + db * db) / sigRange2;
+                    const w = Math.exp(-(spatial + range));
+                    sumR += neighbor.rgb[0] * w;
+                    sumG += neighbor.rgb[1] * w;
+                    sumB += neighbor.rgb[2] * w;
+                    sumW += w;
+                }
+            }
+
+            const filtered = [sumR / sumW, sumG / sumW, sumB / sumW];
+            const blended = [
+                center.rgb[0] * (1 - strength) + filtered[0] * strength,
+                center.rgb[1] * (1 - strength) + filtered[1] * strength,
+                center.rgb[2] * (1 - strength) + filtered[2] * strength
+            ];
+            result[index] = createPixelInfo(blended, center.alpha);
+        }
+    }
+    return result;
+}
+
+// Plain isotropic gaussian — used by photo strategy for very mild smoothing
+// before heavy dithering. Cheaper than bilateral; intentionally not edge-aware
+// so dither has clean gradients to work with.
+function gaussianFilterPixels(sourcePixels, width, height, params) {
+    const { radius = 1, sigmaSpatial = 0.8, strength = 0.2 } = params;
+    const result = new Array(sourcePixels.length);
+    const sig2 = 2 * sigmaSpatial * sigmaSpatial;
+
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const index = y * width + x;
+            const center = sourcePixels[index];
+            let sumR = 0, sumG = 0, sumB = 0, sumW = 0;
+            for (let dy = -radius; dy <= radius; dy++) {
+                const ny = y + dy;
+                if (ny < 0 || ny >= height) continue;
+                for (let dx = -radius; dx <= radius; dx++) {
+                    const nx = x + dx;
+                    if (nx < 0 || nx >= width) continue;
+                    const ni = ny * width + nx;
+                    const w = Math.exp(-(dx * dx + dy * dy) / sig2);
+                    sumR += sourcePixels[ni].rgb[0] * w;
+                    sumG += sourcePixels[ni].rgb[1] * w;
+                    sumB += sourcePixels[ni].rgb[2] * w;
+                    sumW += w;
+                }
+            }
+            const filtered = [sumR / sumW, sumG / sumW, sumB / sumW];
+            const blended = [
+                center.rgb[0] * (1 - strength) + filtered[0] * strength,
+                center.rgb[1] * (1 - strength) + filtered[1] * strength,
+                center.rgb[2] * (1 - strength) + filtered[2] * strength
+            ];
+            result[index] = createPixelInfo(blended, center.alpha);
+        }
+    }
+    return result;
+}
+
+// Legacy mean-flatten filter, kept as a fallback for any strategy still using
+// strategy.smoothing instead of strategy.preprocess.
 function flattenLowVariancePixels(sourcePixels, width, height, smoothing) {
     const smoothedPixels = new Array(sourcePixels.length);
     const { radius, strength, varianceThreshold } = smoothing;
@@ -1308,9 +1500,7 @@ function flattenLowVariancePixels(sourcePixels, width, height, smoothing) {
         for (let x = 0; x < width; x++) {
             const index = y * width + x;
             const neighbors = collectNeighborIndexes(x, y, width, height, radius);
-            let sumR = 0;
-            let sumG = 0;
-            let sumB = 0;
+            let sumR = 0, sumG = 0, sumB = 0;
 
             neighbors.forEach(neighborIndex => {
                 const neighbor = sourcePixels[neighborIndex];
@@ -1318,19 +1508,11 @@ function flattenLowVariancePixels(sourcePixels, width, height, smoothing) {
                 sumG += neighbor.rgb[1];
                 sumB += neighbor.rgb[2];
             });
-
-            const averageRgb = [
-                sumR / neighbors.length,
-                sumG / neighbors.length,
-                sumB / neighbors.length
-            ];
-
+            const averageRgb = [sumR / neighbors.length, sumG / neighbors.length, sumB / neighbors.length];
             let variance = 0;
             neighbors.forEach(neighborIndex => {
-                const neighbor = sourcePixels[neighborIndex];
-                variance += colorDistanceRgb(neighbor.rgb, averageRgb) ** 2;
+                variance += colorDistanceRgb(sourcePixels[neighborIndex].rgb, averageRgb) ** 2;
             });
-
             variance = variance / neighbors.length / (255 * 255);
             if (variance <= varianceThreshold) {
                 const original = sourcePixels[index].rgb;
@@ -1345,7 +1527,6 @@ function flattenLowVariancePixels(sourcePixels, width, height, smoothing) {
             }
         }
     }
-
     return smoothedPixels;
 }
 
@@ -2931,6 +3112,7 @@ function openCustomColorPicker() {
     }
 
     tempCustomColors = [...customColorManager.getColors()];
+    activeColorFamilyTab = 'all';
     populateColorGrid();
     updateSelectedCount();
     customColorPicker.classList.add('open');
@@ -2946,30 +3128,108 @@ function closeCustomColorPicker() {
     announceStatus('已关闭自定义颜色选择器。');
 }
 
+function populatePresetDropdown() {
+    colorPresetSelect.innerHTML = '';
+
+    const groups = {
+        general: { label: '通用模板', items: [] },
+        scenario: { label: '场景化模板', items: [] }
+    };
+    for (const id of Object.keys(COLOR_PRESETS)) {
+        const preset = COLOR_PRESETS[id];
+        const bucket = groups[preset.category] ?? groups.general;
+        bucket.items.push({ id, name: preset.name });
+    }
+
+    for (const key of ['general', 'scenario']) {
+        const group = groups[key];
+        if (group.items.length === 0) continue;
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = group.label;
+        for (const item of group.items) {
+            const option = document.createElement('option');
+            option.value = item.id;
+            option.textContent = item.name;
+            optgroup.appendChild(option);
+        }
+        colorPresetSelect.appendChild(optgroup);
+    }
+
+    const customGroup = document.createElement('optgroup');
+    customGroup.label = '自定义';
+    const customOption = document.createElement('option');
+    customOption.value = 'custom';
+    customOption.textContent = '自定义颜色…';
+    customGroup.appendChild(customOption);
+    colorPresetSelect.appendChild(customGroup);
+
+    // Default selection: balanced 48-color palette. 291 colors as default
+    // makes material lists unwieldy; 48 is a sweet spot for first-time users.
+    colorPresetSelect.value = 'balanced_48';
+}
+
 function populateColorGrid() {
+    renderColorFamilyTabs();
+    renderColorGridForActiveFamily();
+}
+
+function renderColorFamilyTabs() {
+    if (!colorFamilyTabs) return;
+    colorFamilyTabs.innerHTML = '';
+
+    const tabs = [{ id: 'all', label: '全部', swatch: null }];
+    for (const id of FAMILY_IDS) {
+        tabs.push({ id, label: FAMILY_LABELS[id], swatch: FAMILY_SWATCHES[id] });
+    }
+
+    for (const tab of tabs) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'color-family-tab';
+        btn.dataset.family = tab.id;
+        if (tab.id === activeColorFamilyTab) btn.classList.add('active');
+        btn.setAttribute('role', 'tab');
+        if (tab.swatch) {
+            btn.innerHTML = `<span class="family-swatch" style="background:${tab.swatch}"></span><span>${tab.label}</span>`;
+        } else {
+            btn.textContent = tab.label;
+        }
+        btn.addEventListener('click', () => {
+            activeColorFamilyTab = tab.id;
+            renderColorFamilyTabs();
+            renderColorGridForActiveFamily();
+        });
+        colorFamilyTabs.appendChild(btn);
+    }
+}
+
+function renderColorGridForActiveFamily() {
     const allColors = colorSchemeManager.getAllColors();
     colorGrid.innerHTML = '';
 
-    allColors.forEach(color => {
+    let visible;
+    if (activeColorFamilyTab === 'all') {
+        visible = allColors;
+    } else {
+        const groups = groupByFamily(allColors);
+        visible = groups.get(activeColorFamilyTab) ?? [];
+    }
+
+    for (const color of visible) {
         const colorItem = document.createElement('div');
         colorItem.className = 'color-item';
-        if (tempCustomColors.includes(color.code)) {
-            colorItem.classList.add('selected');
-        }
-
+        if (tempCustomColors.includes(color.code)) colorItem.classList.add('selected');
         colorItem.innerHTML = `
             <div class="color-item-preview" style="background-color: ${color.hex}"></div>
             <div class="color-item-code">${color.code}</div>
         `;
-
-        colorItem.addEventListener('click', function() {
+        colorItem.addEventListener('click', () => {
             toggleColorSelection(color.code);
             colorItem.classList.toggle('selected');
             updateSelectedCount();
         });
-
         colorGrid.appendChild(colorItem);
-    });
+    }
 }
 
 function toggleColorSelection(colorCode) {
@@ -3008,9 +3268,10 @@ cancelColorSelectionBtn.addEventListener('click', function() {
         editCustomColorsBtn.style.display = 'block';
         updateReplaceColorOptions();
     } else {
-        // 没有保存的自定义颜色，恢复到之前的预设
-        colorPresetSelect.value = previousPreset;
-        const preset = COLOR_PRESETS[previousPreset];
+        // No saved custom palette: fall back to last preset (or balanced_48).
+        const fallbackId = COLOR_PRESETS[previousPreset] ? previousPreset : 'balanced_48';
+        colorPresetSelect.value = fallbackId;
+        const preset = COLOR_PRESETS[fallbackId];
         if (preset) {
             if (preset.colors === null) {
                 colorSchemeManager.clearColorSubset();

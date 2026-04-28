@@ -15,69 +15,90 @@
 
 ## 核心架构
 
-### 1. 配色方案（colorSchemes.js + colorPresets.js）
+### 1. 配色方案（colorSchemes.js + colorPresets.js + colorClassifier.js + colorIndex.js）
 
 **配色管理架构**：
 ```javascript
 ColorSchemeManager {
   schemes: { mard: { colors: [...] } }
-  colorSubset: null  // 当前使用的颜色子集
-  getCurrentColors() // 返回colorSubset或全部colors
-  setColorSubset(colorCodes) // 设置颜色子集
+  colorSubset: null      // 当前使用的颜色子集
+  fullIndex: ColorIndex  // 全 291 色 KD-Tree
+  subsetIndex: ColorIndex // 子集 KD-Tree（动态构建）
+  getCurrentColors() / getCurrentIndex()
+  setColorSubset(colorCodes)
 }
 
 CustomColorManager {
-  customColors: []  // 用户自定义颜色代码数组
-  loadFromStorage() // 从localStorage加载
-  saveToStorage()   // 保存到localStorage
+  customColors: []
+  loadFromStorage() / saveToStorage()
 }
+
+ColorIndex {
+  nearest(lab) / nearestK(lab, k)  // OKLab KD-Tree
+}
+
+classifyColor(color) -> { family, lightnessBin, hue, chroma, isSpecial }
 ```
 
-**颜色预设系统**：
-- 6种预设：`all_colors`, `basic_10`, `standard_20`, `advanced_30`, `professional_50`, `complete_100`
-- 每个预设包含：`name`、`description`、`colors`（颜色代码数组或null表示全部）
+**颜色预设系统（算法生成，非硬编码）**：
+- 通用：`all_colors`, `essential_24`, `balanced_48`, `rich_96`, `master_160`
+- 场景化：`portrait_64`, `landscape_72`, `vivid_56`, `pastel_36`, `monochrome_28`
+- 每个预设有 `category`（general/scenario）和 `weights`（各色族权重）
+- `materializePresets(allColors)` 在加载完 MARD 色后按"色相+明度均匀采样"生成颜色清单
 - 自定义模式通过`CustomColorManager`管理
+
+**色族分类（colorClassifier.js）**：
+- 11 个色族：`neutral`, `red`, `orange`, `brown`, `yellow`, `green`, `cyan`, `blue`, `purple`, `pink`, `special`
+- 用 OKLCh 色相角 + chroma + lightness 自动归类，**不依赖 MARD 字母前缀**
+- `groupByFamily(colors)`、`sampleEvenly(sortedColors, count)` 是预设和分组浏览的复用工具
 
 **重要规则**：
 - ✅ 只支持MARD配色（291色）
-- ✅ 颜色对象包含感知色差所需元数据：`{ name, code, hex, rgb, lab, chroma, lightness }`
+- ✅ 颜色对象包含感知色差所需元数据：`{ name, code, hex, rgb, lab, chroma, lightness, classification }`
 - ✅ `name`和`code`字段都是MARD编号（如A1、B5）
 - ✅ 自定义颜色通过localStorage永久保存
+- ✅ 新增预设请走"加 SCENARIO_PRESETS 描述符 + 配 weights"，**不要再手写 colors 数组**
 - ❌ 不要引入Perler/Hama或其他配色方案
 
 **当前默认值**：
-- 默认颜色预设：`all_colors`
+- 默认颜色预设：`balanced_48`（291 色对新用户备料压力过大）
 - 默认尺寸：`52 x 52`
-- 保持比例时：上传图片后按“最短边52”自动推算另一边，最长边仍受100上限约束
+- 保持比例时：上传图片后按"最短边52"自动推算另一边，最长边仍受100上限约束
 
-### 2. 图像策略系统（renderStrategies.js + app.js）
+### 2. 图像策略系统（renderStrategies.js + dithering.js + app.js）
 
 **策略配置架构**：
 ```javascript
 PATTERN_STRATEGIES = {
-  smart_default: { resizeMode, distanceMode, smoothing, neutralBias, coherence, despeckle },
-  cartoon: { ... },
-  portrait: { ... },
-  icon: { ... }
+  smart_default: {
+    resizeMode, distanceMode,
+    preprocess: { mode: 'bilateral'|'gaussian'|'none', radius, sigmaSpatial, sigmaRange, strength, varianceThreshold },
+    dither: { mode: 'floyd_steinberg'|'atkinson'|'bayer8'|'none', strength, serpentine },
+    neutralBias, coherence, despeckle,
+    smoothing /* legacy 兼容字段 */
+  },
+  cartoon: { ... }, portrait: { ... }, photo: { ... }, icon: { ... }
 }
 ```
 
 **已落地策略**：
-- `smart_default`：通用模式，平衡统一性和层次
-- `cartoon`：偏向大色块统一和去杂点
-- `portrait`：偏向保留肤色层次与五官
-- `icon`：偏向保留硬边和像素感
+- `smart_default`：双边滤波 + Floyd-Steinberg 抖动，通用平衡（**默认**）
+- `cartoon`：双边滤波 + 关闭抖动 + coherence + despeckle，强化大色块
+- `portrait`：轻双边 + Atkinson 抖动，模拟胶片颗粒保留五官
+- `photo`：高斯轻平滑 + 全力 FS 抖动，最大化渐变还原
+- `icon`：跳过所有平滑和抖动，保住硬边
 
 **默认策略**：
-- `cartoon`
+- `smart_default`
 
-**量化管线**：
+**量化管线（已重构）**：
 1. 根据策略选择缩放方式（smooth / pixelated）
 2. 将源图像像素转换为`OKLab`
-3. 对低纹理区域做有限度平滑
-4. 使用策略距离函数匹配最近MARD颜色
-5. 应用邻域一致性修正（spatial coherence）
-6. 清理小连通域碎色（despeckle）
+3. 预处理：bilateral（保边）/ gaussian（轻平滑）/ none
+4. 用 KD-Tree 查最近色（OKLab，O(log N) 而非暴力 O(N)）
+5. 抖动：Floyd-Steinberg / Atkinson / Bayer 8×8 / none，误差在 OKLab 空间累积
+6. 仅在抖动关闭时执行：spatial coherence + despeckle（抖动开启时跳过，否则会抹掉抖动噪点）
+7. neutralBias 通过 KD-Tree top-K 候选 + 重排实现（K=6 足够覆盖 bias 调整范围）
 
 ### 3. 图纸绘制（app.js - drawPattern）
 
@@ -294,11 +315,14 @@ requestAnimationFrame(() => {
 - ❌ 删除调试用的console.log（保留initialize中的日志）
 
 ### 文件组织
-- `/src/app.js`：主应用逻辑、事件处理、Canvas渲染
-- `/src/colorSchemes.js`：配色方案管理类
-- `/src/colorPresets.js`：颜色预设定义和自定义管理类
-- `/src/renderStrategies.js`：图像策略定义
-- `/src/styles.css`：全局样式、响应式布局
+- `/src/app.js`：主应用逻辑、事件处理、Canvas渲染、量化管线
+- `/src/colorSchemes.js`：配色方案管理类（含 KD-Tree 索引）
+- `/src/colorPresets.js`：算法生成的预设描述符 + CustomColorManager
+- `/src/colorClassifier.js`：OKLCh 色族分类（11 色族）+ 分组、采样工具
+- `/src/colorIndex.js`：OKLab KD-Tree + RGB 暴力 fallback
+- `/src/renderStrategies.js`：5 个图像策略（含预处理 + 抖动配置）
+- `/src/dithering.js`：Floyd-Steinberg / Atkinson / Bayer 8×8（OKLab 空间）
+- `/src/styles.css`：全局样式、响应式布局、色族 tab
 - `/src/mard-color.json`：MARD 291色数据
 - `/index.html`：入口页面、HTML结构
 
@@ -330,15 +354,40 @@ requestAnimationFrame(() => {
 
 如需添加新功能，需注意：
 
-1. **新颜色预设**：在`colorPresets.js`的`COLOR_PRESETS`中添加
-2. **新导出格式**：在`app.js`中添加新的下载逻辑
-3. **新UI组件**：保持灰度设计系统一致性（--gray-50到--gray-900）
-4. **响应式**：确保在PC（≥1024px）、iPad（768-1023px）、手机（≤767px）都测试
-5. **交互功能**：添加新状态时记得在generatePattern中重置
+1. **新颜色预设**：在`colorPresets.js`的`SCENARIO_PRESETS`数组追加描述符（id/name/description/size/category/weights[/prefer]），**不要**手写 colors 数组——`materializePresets` 会按 weights 自动按色相和明度均匀采样
+2. **新色族**：在`colorClassifier.js`修改 `FAMILY_IDS`、`HUE_BINS`、`FAMILY_LABELS`、`FAMILY_SWATCHES` 四处保持同步
+3. **新抖动算法**：在`dithering.js`加 OFFSETS 表 + 导出函数，并接入 `applyDither` 的 switch
+4. **新策略**：在`renderStrategies.js`遵守新 schema（preprocess + dither + neutralBias + coherence + despeckle）；HTML 下拉里同步加 option
+5. **新导出格式**：在`app.js`中添加新的下载逻辑
+6. **新UI组件**：保持灰度设计系统一致性（--gray-50到--gray-900）
+7. **响应式**：确保在PC（≥1024px）、iPad（768-1023px）、手机（≤767px）都测试
+8. **交互功能**：添加新状态时记得在generatePattern中重置
 
 ## 版本历史
 
-### v2.0.0（当前）
+### v3.0.0（当前）
+**配色系统重构**：
+- ➕ OKLCh 色族分类器（11 色族，按色相角 + chroma + lightness 自动归类）
+- ➕ 算法生成的 10 个预设：通用（24/48/96/160/全色系）+ 场景化（人像 64 / 风景 72 / 卡通 56 / 粉彩 36 / 单色 28）
+- ➕ 自定义选色器加色族 tab，按 11 色族 + "全部" 分组浏览
+- ➕ 预设下拉按 optgroup 分类（通用/场景化/自定义）
+
+**转换效果重构**：
+- ➕ OKLab KD-Tree 加速最近色查找（O(log N) 替代 O(N) 暴力搜索，5-10× 提速）
+- ➕ Floyd-Steinberg / Atkinson / Bayer 8×8 抖动，全部在 OKLab 累积误差
+- ➕ 双边滤波预处理（保边平滑），替代旧的方差阈值 mean filter
+- ➕ 新增 `photo` 策略：高斯轻平滑 + 全力 FS 抖动
+- ➕ neutralBias 改为 KD-Tree top-K 候选 + 重排（K=6）
+
+**默认值变更**：
+- 默认预设：`all_colors` → `balanced_48`（291 色对新用户备料压力过大）
+- 默认策略：`cartoon` → `smart_default`
+
+**性能数据**：
+- 52×52 / FS 抖动 / 48 色：~10ms
+- 100×100 / 卡通（双边 + coherence + despeckle）：~21ms
+
+### v2.0.0
 **新增功能**：
 - ➕ 6种颜色预设模板系统（入门10色到全色系291色）
 - ➕ 自定义颜色选择功能（从291色中自由选择）

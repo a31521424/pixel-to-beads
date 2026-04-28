@@ -20,6 +20,9 @@
  */
 
 import mardColorData from './mard-color.json';
+import { ColorIndex } from './colorIndex.js';
+import { annotateColors } from './colorClassifier.js';
+import { materializePresets } from './colorPresets.js';
 
 function srgbChannelToLinear(value) {
     const channel = value / 255;
@@ -57,7 +60,9 @@ class ColorSchemeManager {
 
         this.currentScheme = 'mard';
         this.mardColorsLoaded = false;
-        this.colorSubset = null; // 颜色子集（预设模版或自定义）
+        this.colorSubset = null; // Active subset (preset or custom).
+        this.fullIndex = null; // KD-Tree over full palette.
+        this.subsetIndex = null; // KD-Tree over current subset (lazy).
     }
 
     async loadMardColors() {
@@ -78,6 +83,9 @@ class ColorSchemeManager {
                 };
             });
 
+            annotateColors(this.schemes.mard.colors);
+            this.fullIndex = new ColorIndex(this.schemes.mard.colors);
+            materializePresets(this.schemes.mard.colors);
             this.mardColorsLoaded = true;
             console.log(`MARD 配色方案已加载: ${this.schemes.mard.colors.length} 种颜色`);
         } catch (error) {
@@ -94,24 +102,26 @@ class ColorSchemeManager {
         ] : [0, 0, 0];
     }
 
-    // 设置颜色子集（预设模版或自定义）
+    // Sets the active color subset (preset or custom). Triggers KD-Tree rebuild.
     setColorSubset(colorCodes) {
         if (!colorCodes || colorCodes.length === 0) {
             this.colorSubset = null;
+            this.subsetIndex = null;
             return;
         }
 
         const allColors = this.schemes[this.currentScheme].colors;
-        this.colorSubset = allColors.filter(color => colorCodes.includes(color.code));
+        const codeSet = new Set(colorCodes);
+        this.colorSubset = allColors.filter(color => codeSet.has(color.code));
+        this.subsetIndex = this.colorSubset.length > 0 ? new ColorIndex(this.colorSubset) : null;
         console.log(`已设置颜色子集: ${this.colorSubset.length} 种颜色`);
     }
 
-    // 清除颜色子集，使用全部颜色
     clearColorSubset() {
         this.colorSubset = null;
+        this.subsetIndex = null;
     }
 
-    // 获取当前使用的颜色（如果有子集则返回子集，否则返回全部）
     getCurrentColors() {
         if (this.colorSubset && this.colorSubset.length > 0) {
             return this.colorSubset;
@@ -119,7 +129,10 @@ class ColorSchemeManager {
         return this.schemes[this.currentScheme].colors;
     }
 
-    // 获取全部颜色（不受子集限制）
+    getCurrentIndex() {
+        return this.subsetIndex || this.fullIndex;
+    }
+
     getAllColors() {
         return this.schemes[this.currentScheme].colors;
     }

@@ -1862,11 +1862,54 @@ section h2 {
     font-size: 1.1em;
 }
 
+.color-family-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 12px 0 4px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--gray-200);
+}
+
+.color-family-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid var(--gray-300);
+    background: var(--white);
+    color: var(--gray-700);
+    border-radius: 999px;
+    font-size: 0.78em;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    line-height: 1;
+}
+
+.color-family-tab:hover {
+    background: var(--gray-50);
+    border-color: var(--gray-500);
+}
+
+.color-family-tab.active {
+    background: var(--gray-900);
+    border-color: var(--gray-900);
+    color: var(--white);
+}
+
+.family-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    flex-shrink: 0;
+}
+
 .color-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
     gap: 8px;
-    margin-top: 8px;
+    margin-top: 12px;
 }
 
 .color-item {

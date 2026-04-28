@@ -1,104 +1,279 @@
-// MARD颜色预设模版系统
-// 根据实际购买的豆子套装数量，提供色系均衡的颜色选择
+// Algorithmic preset generation for MARD colors.
+// Presets are *computed* from the live OKLab classification rather than
+// hard-coded code lists. This guarantees even hue coverage and lets us
+// add new presets without curating spreadsheets.
 
-const COLOR_PRESETS = {
-    // 全色系 - 291色
-    all_colors: {
+import {
+    annotateColors,
+    groupByFamily,
+    sampleEvenly,
+    FAMILY_IDS,
+    FAMILY_LABELS
+} from './colorClassifier.js';
+
+// Preset registry. Each entry has a generator(colors) that returns string[]
+// of MARD codes, OR colors=null (means "all colors").
+//
+// `weight` controls how many colors each family contributes when generating
+// a preset of total size N. Weights are normalized internally.
+
+const SCENARIO_PRESETS = [
+    {
+        id: 'all_colors',
         name: '全色系（291色）',
-        description: 'MARD 完整 291 色，适合专业级作品',
-        colors: null
+        description: 'MARD 完整 291 色，专业级最大色域',
+        size: null,
+        category: 'general'
     },
-
-    // 基础套装 - 10色：覆盖主色和常用中性色
-    basic_10: {
-        name: '入门10色',
-        description: '覆盖最常用主色与基础中性色',
-        colors: [
-            'R15', 'A10', 'A5', 'B8', 'C10',
-            'C7', 'D6', 'P1', 'H15', 'M1'
-        ]
+    {
+        id: 'essential_24',
+        name: '入门 24 色',
+        description: '每色族 1-2 色 + 黑白灰，适合首次拼豆',
+        size: 24,
+        category: 'general',
+        weights: balancedWeights({ neutral: 1.6, special: 0 })
     },
-
-    // 标准套装 - 20色：兼顾主体色与基础明暗层次
-    standard_20: {
-        name: '标准20色',
-        description: '日常创作，兼顾主体颜色和基础明暗',
-        colors: [
-            'R15', 'R10', 'A10', 'A7', 'A5',
-            'A4', 'B8', 'B17', 'C10', 'C5',
-            'C7', 'C8', 'D6', 'D3', 'P1',
-            'P10', 'H15', 'H10', 'M1', 'M15'
-        ]
+    {
+        id: 'balanced_48',
+        name: '均衡 48 色',
+        description: '色族均衡覆盖，日常作品首选',
+        size: 48,
+        category: 'general',
+        weights: balancedWeights({ neutral: 1.4, special: 0.5 })
     },
-
-    // 进阶套装 - 30色：适合复杂图案和更丰富的色彩过渡
-    advanced_30: {
-        name: '进阶30色',
-        description: '复杂图案，层次更完整',
-        colors: [
-            'R15', 'R10', 'R5', 'R20', 'A10',
-            'A7', 'A14', 'A5', 'A4', 'A8',
-            'B8', 'B4', 'B17', 'B20', 'C10',
-            'C5', 'C15', 'C7', 'C8', 'C16',
-            'D6', 'D3', 'D1', 'P1', 'P10',
-            'P15', 'H15', 'H10', 'M1', 'M15'
-        ]
+    {
+        id: 'rich_96',
+        name: '丰富 96 色',
+        description: '更细的明度阶梯，适合渐变和复杂图案',
+        size: 96,
+        category: 'general',
+        weights: balancedWeights({ neutral: 1.4, special: 0.6 })
     },
-
-    // 专业套装 - 50色：提升过渡自然度和综合色域
-    professional_50: {
-        name: '专业50色',
-        description: '精细作品，色彩过渡更自然',
-        colors: [
-            'R15', 'R10', 'R5', 'R20', 'R25',
-            'A10', 'A7', 'A14', 'A9', 'A6',
-            'A5', 'A4', 'A8', 'A3', 'A15',
-            'B8', 'B4', 'B17', 'B12', 'B20',
-            'B5', 'B19', 'B14', 'C10', 'C5',
-            'C15', 'C11', 'C7', 'C8', 'C4',
-            'C16', 'C20', 'C29', 'D6', 'D3',
-            'D1', 'D9', 'D5', 'P1', 'P10',
-            'P15', 'P20', 'H15', 'H10', 'H5',
-            'H20', 'M1', 'M8', 'M10', 'M15'
-        ]
+    {
+        id: 'master_160',
+        name: '大师 160 色',
+        description: '接近全色域，过渡更自然',
+        size: 160,
+        category: 'general',
+        weights: balancedWeights({ neutral: 1.2, special: 0.8 })
     },
-
-    // 大师套装 - 100色：覆盖高频色系并补充特殊系列
-    complete_100: {
-        name: '大师100色',
-        description: '大型作品，覆盖高频色系并补充特殊色',
-        colors: [
-            'A1', 'A3', 'A4', 'A5', 'A6',
-            'A7', 'A8', 'A10', 'A12', 'A14',
-            'A15', 'A22', 'B1', 'B2', 'B4',
-            'B5', 'B7', 'B8', 'B10', 'B12',
-            'B14', 'B17', 'B19', 'B20', 'B25',
-            'B29', 'B31', 'C2', 'C4', 'C5',
-            'C6', 'C7', 'C8', 'C9', 'C10',
-            'C11', 'C13', 'C16', 'C20', 'C24',
-            'C29', 'D1', 'D2', 'D3', 'D5',
-            'D6', 'D7', 'D9', 'D12', 'D20',
-            'D24', 'E1', 'E3', 'E5', 'E8',
-            'E10', 'E12', 'E17', 'E22', 'E24',
-            'F1', 'F5', 'F10', 'F15', 'F20',
-            'F25', 'G1', 'G5', 'G10', 'G15',
-            'G20', 'H1', 'H3', 'H5', 'H10',
-            'H15', 'H20', 'M1', 'M5', 'M8',
-            'M10', 'M15', 'P1', 'P5', 'P10',
-            'P15', 'P20', 'Q1', 'Q2', 'R1',
-            'R5', 'R10', 'R15', 'R20', 'R25',
-            'T1', 'Y1', 'Y4', 'ZG1', 'ZG5'
-        ]
+    {
+        id: 'portrait_64',
+        name: '人像 64 色',
+        description: '强化肤色棕色与中性色，适合真人像素化',
+        size: 64,
+        category: 'scenario',
+        weights: {
+            neutral: 1.6,
+            red: 0.6,
+            orange: 1.4,
+            brown: 2.2,
+            yellow: 0.8,
+            green: 0.4,
+            cyan: 0.4,
+            blue: 0.6,
+            purple: 0.5,
+            pink: 1.4,
+            special: 0
+        }
+    },
+    {
+        id: 'landscape_72',
+        name: '风景 72 色',
+        description: '强化绿/蓝/棕，适合自然风光与建筑',
+        size: 72,
+        category: 'scenario',
+        weights: {
+            neutral: 1.0,
+            red: 0.5,
+            orange: 0.8,
+            brown: 1.6,
+            yellow: 1.1,
+            green: 1.8,
+            cyan: 1.3,
+            blue: 1.7,
+            purple: 0.5,
+            pink: 0.4,
+            special: 0.2
+        }
+    },
+    {
+        id: 'vivid_56',
+        name: '鲜艳卡通 56 色',
+        description: '高饱和主色 + 少量阴影，适合二次元、Q 版',
+        size: 56,
+        category: 'scenario',
+        weights: {
+            neutral: 0.8,
+            red: 1.2,
+            orange: 1.2,
+            brown: 0.6,
+            yellow: 1.2,
+            green: 1.2,
+            cyan: 1.0,
+            blue: 1.2,
+            purple: 1.0,
+            pink: 1.2,
+            special: 1.0
+        },
+        prefer: 'saturated'
+    },
+    {
+        id: 'pastel_36',
+        name: '粉彩 36 色',
+        description: '高明度低饱和，适合马卡龙、儿童插画',
+        size: 36,
+        category: 'scenario',
+        weights: balancedWeights({ neutral: 1.2, special: 0 }),
+        prefer: 'light'
+    },
+    {
+        id: 'monochrome_28',
+        name: '单色 28 色',
+        description: '黑白灰阶 + 少量米棕，适合素描风',
+        size: 28,
+        category: 'scenario',
+        weights: {
+            neutral: 5.0,
+            brown: 1.0,
+            red: 0,
+            orange: 0,
+            yellow: 0,
+            green: 0,
+            cyan: 0,
+            blue: 0,
+            purple: 0,
+            pink: 0,
+            special: 0
+        }
     }
-};
+];
 
-// 用户自定义颜色管理
+function balancedWeights(overrides = {}) {
+    const base = {};
+    for (const id of FAMILY_IDS) base[id] = 1;
+    return { ...base, ...overrides };
+}
+
+// Filters a sorted-by-lightness family list according to the preset's preference.
+function filterByPreference(colors, prefer) {
+    if (!prefer) return colors;
+    if (prefer === 'light') return colors.filter(c => c.lab.L >= 0.7);
+    if (prefer === 'saturated') return colors.filter(c => c.chroma >= 0.08 || c.lab.L < 0.25 || c.lab.L > 0.92);
+    return colors;
+}
+
+// Distribute total `size` across families according to weights, rounding up
+// where possible so small color families still get a representative.
+function allocate(size, weights, familySizes) {
+    const totalWeight = Object.values(weights).reduce((s, w) => s + w, 0);
+    if (totalWeight === 0) return {};
+
+    const allocations = {};
+    let remaining = size;
+    const fractional = [];
+
+    for (const id of FAMILY_IDS) {
+        const w = weights[id] ?? 0;
+        if (w === 0 || (familySizes[id] ?? 0) === 0) {
+            allocations[id] = 0;
+            continue;
+        }
+        const ideal = (size * w) / totalWeight;
+        const floor = Math.floor(ideal);
+        allocations[id] = Math.min(floor, familySizes[id]);
+        remaining -= allocations[id];
+        fractional.push({ id, frac: ideal - floor });
+    }
+
+    fractional.sort((a, b) => b.frac - a.frac);
+    for (const entry of fractional) {
+        if (remaining <= 0) break;
+        if (allocations[entry.id] < familySizes[entry.id]) {
+            allocations[entry.id] += 1;
+            remaining -= 1;
+        }
+    }
+    return allocations;
+}
+
+// Generates the color code list for a single preset descriptor.
+function generatePreset(preset, allColors) {
+    if (preset.size === null) return null;
+
+    const groups = groupByFamily(allColors);
+    const filtered = new Map();
+    const sizes = {};
+    for (const [familyId, list] of groups.entries()) {
+        const refined = filterByPreference(list, preset.prefer);
+        filtered.set(familyId, refined);
+        sizes[familyId] = refined.length;
+    }
+
+    const allocations = allocate(preset.size, preset.weights, sizes);
+    const picked = [];
+    for (const familyId of FAMILY_IDS) {
+        const count = allocations[familyId] ?? 0;
+        if (count === 0) continue;
+        const family = filtered.get(familyId);
+        picked.push(...sampleEvenly(family, count));
+    }
+
+    // Stable order: family order first, then lightness desc within family.
+    picked.sort((a, b) => {
+        const fa = FAMILY_IDS.indexOf(a.classification.family);
+        const fb = FAMILY_IDS.indexOf(b.classification.family);
+        if (fa !== fb) return fa - fb;
+        return b.lab.L - a.lab.L;
+    });
+
+    return picked.map(c => c.code);
+}
+
+// Public registry: { id -> {name, description, colors[]|null, category} }.
+// `colors` is materialized once `materializePresets(allColors)` is called.
+export const COLOR_PRESETS = {};
+
+for (const descriptor of SCENARIO_PRESETS) {
+    COLOR_PRESETS[descriptor.id] = {
+        id: descriptor.id,
+        name: descriptor.name,
+        description: descriptor.description,
+        category: descriptor.category,
+        colors: descriptor.size === null ? null : []
+    };
+}
+
+// Materializes preset color lists from the loaded MARD palette. Idempotent.
+let presetsMaterialized = false;
+export function materializePresets(allColors) {
+    if (presetsMaterialized) return COLOR_PRESETS;
+    annotateColors(allColors);
+
+    for (const descriptor of SCENARIO_PRESETS) {
+        if (descriptor.size === null) continue;
+        const codes = generatePreset(descriptor, allColors);
+        COLOR_PRESETS[descriptor.id].colors = codes;
+    }
+    presetsMaterialized = true;
+    return COLOR_PRESETS;
+}
+
+export function getPresetCategories() {
+    return [
+        { id: 'general', label: '通用' },
+        { id: 'scenario', label: '场景化' }
+    ];
+}
+
+export { FAMILY_LABELS };
+
+// User-defined custom palette (persisted in localStorage).
 class CustomColorManager {
     constructor() {
         this.customColors = this.loadFromStorage() || [];
     }
 
-    // 从localStorage加载
     loadFromStorage() {
         try {
             const saved = localStorage.getItem('customBeadColors');
@@ -109,7 +284,6 @@ class CustomColorManager {
         }
     }
 
-    // 保存到localStorage
     saveToStorage() {
         try {
             localStorage.setItem('customBeadColors', JSON.stringify(this.customColors));
@@ -118,7 +292,6 @@ class CustomColorManager {
         }
     }
 
-    // 添加颜色
     addColor(colorCode) {
         if (!this.customColors.includes(colorCode)) {
             this.customColors.push(colorCode);
@@ -126,7 +299,6 @@ class CustomColorManager {
         }
     }
 
-    // 移除颜色
     removeColor(colorCode) {
         const index = this.customColors.indexOf(colorCode);
         if (index > -1) {
@@ -135,7 +307,6 @@ class CustomColorManager {
         }
     }
 
-    // 切换颜色（选中/取消）
     toggleColor(colorCode) {
         if (this.customColors.includes(colorCode)) {
             this.removeColor(colorCode);
@@ -144,24 +315,25 @@ class CustomColorManager {
         }
     }
 
-    // 获取所有自定义颜色
     getColors() {
         return [...this.customColors];
     }
 
-    // 清空
+    setColors(codes) {
+        this.customColors = Array.from(new Set(codes));
+        this.saveToStorage();
+    }
+
     clear() {
         this.customColors = [];
         this.saveToStorage();
     }
 
-    // 检查是否已选中
     isSelected(colorCode) {
         return this.customColors.includes(colorCode);
     }
 }
 
-// 导出
 const customColorManager = new CustomColorManager();
 
-export { COLOR_PRESETS, customColorManager };
+export { customColorManager };

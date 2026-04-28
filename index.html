@@ -113,27 +113,22 @@
                     <div class="setting-item">
                         <label for="colorPreset">颜色模版:</label>
                         <select id="colorPreset" class="color-preset-select">
-                            <option value="all_colors" selected>全色系（291色）</option>
-                            <option value="basic_10">入门10色</option>
-                            <option value="standard_20">标准20色</option>
-                            <option value="advanced_30">进阶30色</option>
-                            <option value="professional_50">专业50色</option>
-                            <option value="complete_100">大师100色</option>
-                            <option value="custom">自定义颜色...</option>
+                            <!-- Populated dynamically from COLOR_PRESETS -->
                         </select>
-                        <p class="preset-description">使用完整 291 色 MARD 色板，适合追求更高还原度的图纸。</p>
+                        <p class="preset-description">加载中…</p>
                         <button id="editCustomColors" class="btn-secondary" style="display: none; margin-top: 8px;">修改颜色选择</button>
                     </div>
 
                     <div class="setting-item">
                         <label for="patternStrategy">图像策略:</label>
                         <select id="patternStrategy" class="pattern-strategy-select">
-                            <option value="smart_default">通用优化</option>
-                            <option value="cartoon" selected>卡通角色（默认）</option>
+                            <option value="smart_default" selected>通用优化（推荐）</option>
+                            <option value="cartoon">卡通角色</option>
                             <option value="portrait">真人像素化</option>
+                            <option value="photo">照片写实</option>
                             <option value="icon">图标 / 像素风</option>
                         </select>
-                        <p class="strategy-description">强化大色块统一和脸部干净度，适合二次元、Q版、扁平插画。</p>
+                        <p class="strategy-description">平衡色块统一与渐变，适合大多数照片与插画。</p>
                     </div>
 
                     <div class="setting-item">
@@ -360,11 +355,11 @@
                     </article>
                     <article>
                         <h3>颜色模板功能具体能做什么？</h3>
-                        <p>豆宝支持全色系 291 色、10 色到 100 色的预设模板，以及自定义颜色子集。你可以直接用完整 MARD 色板追求更高还原度，也可以限制颜色数量，让成品更容易备料、控制成本，或统一整体风格。</p>
+                        <p>豆宝提供两类模板：通用模板按色族均匀采样，从入门 24 色到大师 160 色，再到全色系 291 色；场景化模板针对人像、风景、卡通、粉彩、单色等场景预先优化色族权重。也可以从 291 色中按色族分组挑选自定义子集，更方便控制成本和风格。</p>
                     </article>
                     <article>
                         <h3>图像策略功能有什么区别？</h3>
-                        <p>图像策略决定系统如何处理细节、边缘和碎色。卡通角色更适合二次元、Q 版和扁平插画；真人像素化会更重视肤色层次和五官；图标 / 像素风更强调硬边与原始色块关系；通用优化则适合大多数普通图片。</p>
+                        <p>图像策略决定预处理与抖动方式。通用优化采用双边滤波 + Floyd-Steinberg 抖动，平衡渐变与色块；卡通角色关闭抖动以获得干净大色块；真人像素化用 Atkinson 抖动模拟胶片颗粒；照片写实开启全力抖动还原渐变；图标 / 像素风跳过所有平滑保住硬边。</p>
                     </article>
                     <article>
                         <h3>生成后还能手动修改 beads 颜色吗？</h3>
@@ -438,12 +433,13 @@
                 </div>
                 <div class="color-picker-body">
                     <div class="color-picker-info">
-                        <p>从 MARD 291 色中选择你手中拥有的豆子颜色</p>
+                        <p>从 MARD 291 色中选择你手中拥有的豆子颜色，按色族分组浏览。</p>
                         <div class="color-picker-actions">
                             <button id="clearAllColors" class="btn-secondary-small">清空选择</button>
                             <span class="selected-count">已选择: <strong id="selectedColorCount">0</strong> 色</span>
                         </div>
                     </div>
+                    <div id="colorFamilyTabs" class="color-family-tabs" role="tablist"></div>
                     <div id="colorGrid" class="color-grid"></div>
                 </div>
                 <div class="color-picker-footer">
@@ -612,11 +608,11 @@
                 "featureList": [
                     "支持 MARD 291 色完整配色",
                     "上传图片后可先裁剪主体再生成拼豆图纸",
-                    "6 种颜色预设模板和自定义颜色选择",
+                    "通用与场景化颜色模板（含人像、风景、卡通、粉彩、单色）+ 按色族分组的自定义选择",
                     "智能材料清单统计与少量色替换",
                     "支持点选、框选和轨迹描边编辑图纸",
                     "高分辨率 PNG 图纸下载",
-                    "支持真人、卡通、图标三类图像策略优化",
+                    "Floyd-Steinberg / Atkinson / Bayer 抖动 + 双边预处理 + KD-Tree 加速量化",
                     "支持匿名公开留言反馈",
                     "支持桌面端、iPad 和手机端"
                 ],
@@ -667,7 +663,7 @@
                         "name": "颜色模板功能具体能做什么？",
                         "acceptedAnswer": {
                             "@type": "Answer",
-                            "text": "豆宝支持全色系 291 色、10 色到 100 色的预设模板，以及自定义颜色子集。你可以直接用完整 MARD 色板追求更高还原度，也可以限制颜色数量，让成品更容易备料、控制成本，或统一整体风格。"
+                            "text": "豆宝提供两类模板：通用模板按色族均匀采样，从入门 24 色到大师 160 色，再到全色系 291 色；场景化模板针对人像、风景、卡通、粉彩、单色等场景预先优化色族权重。也可以从 291 色中按色族分组挑选自定义子集，更方便控制成本和风格。"
                         }
                     },
                     {
